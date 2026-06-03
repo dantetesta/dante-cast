@@ -19,6 +19,8 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut, value: app.lastError)
+        // Skin: segue o sistema, ou força claro/escuro conforme os Ajustes.
+        .preferredColorScheme(app.settings.appearance.colorScheme)
     }
 
     // MARK: - Sidebar

@@ -102,6 +102,8 @@ final class H264Decoder {
             onError?("Falha ao criar VTDecompressionSession (status \(sessStatus))")
             return
         }
+        // Modo tempo-real: prioriza baixa latência (não acumula frames para reordenar).
+        VTSessionSetProperty(sess, key: kVTDecompressionPropertyKey_RealTime, value: kCFBooleanTrue)
         self.session = sess
         self.receivedKeyframe = false
         Log.decoder.info("Decoder configurado \(self.width)x\(self.height)")
@@ -129,42 +131,34 @@ final class H264Decoder {
             }
         }
 
-        // Annex-B -> NAL units -> AVCC.
-        let units = AnnexBParser.parseNALUnits(frame.annexB)
-        let avcc = AnnexBParser.toAVCC(units)
+        // Annex-B -> AVCC em uma passada/alocação (hot path).
+        let avcc = AnnexBParser.annexBToAVCC(frame.annexB)
         guard !avcc.isEmpty else { return }
 
-        // Monta um CMBlockBuffer com os dados AVCC.
-        var blockBuffer: CMBlockBuffer?
-        let avccBytes = [UInt8](avcc)
-        var mutableBytes = avccBytes
-        let createStatus = mutableBytes.withUnsafeMutableBytes { raw -> OSStatus in
-            CMBlockBufferCreateWithMemoryBlock(
-                allocator: kCFAllocatorDefault,
-                memoryBlock: raw.baseAddress,
-                blockLength: raw.count,
-                blockAllocator: kCFAllocatorNull, // não libera nossa memória
-                customBlockSource: nil,
-                offsetToData: 0,
-                dataLength: raw.count,
-                flags: 0,
-                blockBufferOut: &blockBuffer)
-        }
-        guard createStatus == kCMBlockBufferNoErr, let bb = blockBuffer else { return }
-
-        // Como usamos kCFAllocatorNull, precisamos copiar os bytes para um buffer
-        // gerenciado pelo CMBlockBuffer e garantir que sobrevivam à chamada async.
-        var managedBlock: CMBlockBuffer?
-        let copyStatus = CMBlockBufferCreateContiguous(
+        // Aloca UM CMBlockBuffer gerenciado pelo CF e copia os bytes UMA vez.
+        // (Antes: até 3-4 cópias por frame.) O bloco é dono da memória e sobrevive
+        // à decodificação assíncrona.
+        var block: CMBlockBuffer?
+        let createStatus = CMBlockBufferCreateWithMemoryBlock(
             allocator: kCFAllocatorDefault,
-            sourceBuffer: bb,
+            memoryBlock: nil,                 // deixa o CF alocar
+            blockLength: avcc.count,
             blockAllocator: kCFAllocatorDefault,
             customBlockSource: nil,
             offsetToData: 0,
             dataLength: avcc.count,
-            flags: kCMBlockBufferAlwaysCopyDataFlag,
-            blockBufferOut: &managedBlock)
-        guard copyStatus == kCMBlockBufferNoErr, let block = managedBlock else { return }
+            flags: kCMBlockBufferAssureMemoryNowFlag,
+            blockBufferOut: &block)
+        guard createStatus == kCMBlockBufferNoErr, let block = block else { return }
+
+        let copyStatus = avcc.withUnsafeBytes { raw -> OSStatus in
+            CMBlockBufferReplaceDataBytes(
+                with: raw.baseAddress!,
+                blockBuffer: block,
+                offsetIntoDestination: 0,
+                dataLength: avcc.count)
+        }
+        guard copyStatus == kCMBlockBufferNoErr else { return }
 
         // Timing: PTS em microssegundos -> CMTime (timescale 1_000_000).
         let pts = CMTime(value: frame.ptsMicros, timescale: 1_000_000)

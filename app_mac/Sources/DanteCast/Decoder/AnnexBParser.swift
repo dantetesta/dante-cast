@@ -96,6 +96,54 @@ enum AnnexBParser {
         return out
     }
 
+    /// Caminho rápido: converte um access unit Annex-B diretamente para AVCC em UMA
+    /// passada e UMA alocação, sem criar `NALUnit`/`Data` intermediários por NAL.
+    /// Ignora AUD/SEI. Usado no hot path de decode (por frame, 30-60x/s).
+    static func annexBToAVCC(_ data: Data) -> Data {
+        // Reserva o tamanho de entrada (saída é ~igual: trocamos start codes 3-4B por len 4B).
+        var out = Data(capacity: data.count + 16)
+        data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+            let n = raw.count
+            guard n >= 4 else { return }
+
+            // Localiza o início do primeiro start code.
+            var i = 0
+            // Função inline: tamanho do start code em `p` (0 = não é start code).
+            func scLen(_ p: Int) -> Int {
+                if p + 3 < n, base[p] == 0, base[p+1] == 0, base[p+2] == 0, base[p+3] == 1 { return 4 }
+                if p + 2 < n, base[p] == 0, base[p+1] == 0, base[p+2] == 1 { return 3 }
+                return 0
+            }
+
+            // Pula até o primeiro start code.
+            while i < n && scLen(i) == 0 { i += 1 }
+
+            while i < n {
+                let sc = scLen(i)
+                guard sc > 0 else { i += 1; continue }
+                let nalStart = i + sc
+                guard nalStart < n else { break }
+                // Procura o próximo start code (fim deste NAL).
+                var j = nalStart
+                while j < n && scLen(j) == 0 { j += 1 }
+                let nalEnd = (j < n) ? j : n
+                let length = nalEnd - nalStart
+                if length > 0 {
+                    let nalType = base[nalStart] & 0x1F
+                    // 9 = AUD, 6 = SEI -> não vão para o sample.
+                    if nalType != 9 && nalType != 6 {
+                        var be = UInt32(length).bigEndian
+                        withUnsafeBytes(of: &be) { out.append(contentsOf: $0) }
+                        out.append(base + nalStart, count: length)
+                    }
+                }
+                i = nalEnd
+            }
+        }
+        return out
+    }
+
     /// Extrai (sps, pps) de um buffer Annex-B de configuração.
     static func extractParameterSets(_ data: Data) -> (sps: Data, pps: Data)? {
         let units = parseNALUnits(data)

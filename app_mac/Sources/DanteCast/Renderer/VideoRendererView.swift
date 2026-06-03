@@ -15,6 +15,10 @@ final class SampleBufferRenderView: NSView {
     /// Rotação atual em graus (0/90/180/270) — aplicada via transform da camada.
     var rotationDegrees: Int = 0 { didSet { applyTransform() } }
 
+    /// Cache do format description (recriar por frame é desperdício de CPU).
+    private var cachedFormat: CMVideoFormatDescription?
+    private var cachedDims: (Int, Int) = (0, 0)
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         commonInit()
@@ -70,12 +74,23 @@ final class SampleBufferRenderView: NSView {
 
     /// Constrói um CMSampleBuffer (com timing) a partir de um CVPixelBuffer.
     private func makeSampleBuffer(from pixelBuffer: CVPixelBuffer, pts: CMTime) -> CMSampleBuffer? {
-        var formatDesc: CMVideoFormatDescription?
-        let status = CMVideoFormatDescriptionCreateForImageBuffer(
-            allocator: kCFAllocatorDefault,
-            imageBuffer: pixelBuffer,
-            formatDescriptionOut: &formatDesc)
-        guard status == noErr, let fmt = formatDesc else { return nil }
+        // Reusa o format description enquanto as dimensões não mudarem.
+        let w = CVPixelBufferGetWidth(pixelBuffer)
+        let h = CVPixelBufferGetHeight(pixelBuffer)
+        let fmt: CMVideoFormatDescription
+        if let cached = cachedFormat, cachedDims == (w, h) {
+            fmt = cached
+        } else {
+            var formatDesc: CMVideoFormatDescription?
+            let status = CMVideoFormatDescriptionCreateForImageBuffer(
+                allocator: kCFAllocatorDefault,
+                imageBuffer: pixelBuffer,
+                formatDescriptionOut: &formatDesc)
+            guard status == noErr, let newFmt = formatDesc else { return nil }
+            cachedFormat = newFmt
+            cachedDims = (w, h)
+            fmt = newFmt
+        }
 
         var timing = CMSampleTimingInfo(
             duration: .invalid,

@@ -17,6 +17,22 @@ Builds prontos na página de **[Releases](https://github.com/dantetesta/dante-ca
 
 Repositório: **https://github.com/dantetesta/dante-cast** · CI: GitHub Actions (compila e publica os binários a cada tag `v*`).
 
+### 🆕 Novidades v1.1.0 (polimento Apple-grade)
+
+**Performance / anti-lag**
+- 🍎 Decodificação movida para **fora da main thread** (eliminado o gargalo de UI por frame).
+- 🍎 Buffer do decoder com **1 cópia por frame** (antes 3-4) + `AnnexBParser` em passada única.
+- 🍎 `VTDecompressionSession` em **modo tempo-real**; `CMVideoFormatDescription` cacheado no render.
+- 🍎 `MessageReader` com cursor (sem `removeSubrange` O(n) por mensagem).
+- 🤖 Fila de transmissão reduzida **64 → 6** frames (corta o acúmulo de latência sob congestão).
+- 🤖 Encoder com **baixa latência**: `KEY_LOW_LATENCY`, `KEY_PRIORITY=0`, `KEY_OPERATING_RATE`, `KEY_LATENCY=1`.
+
+**UI / features**
+- 🖼️ **Moldura de smartphone** no espelhamento (skin de celular com dynamic island) — ativável.
+- 🌓 Seletor de **aparência** (Sistema / Claro / Escuro).
+- 🎙️ **Gravação com ou sem áudio** do microfone (A/V sincronizados no host clock).
+- 🎛️ **Toolbar redesenhada**: botões grandes, com rótulo, agrupados e com feedback de hover/ativo.
+
 ```
 ┌──────────────────────┐        Wi‑Fi / LAN         ┌──────────────────────┐
 │   Android (Companion) │  ──── H.264 sobre TCP ───▶ │     Mac (Receiver)    │

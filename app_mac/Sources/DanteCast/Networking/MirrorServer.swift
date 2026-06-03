@@ -206,7 +206,9 @@ final class MirrorServer {
 
         case .videoConfig:
             guard handshakeDone, let cfg = VideoConfigPayload.decode(msg.payload) else { return }
-            dispatchMain { self.onVideoConfig?(cfg) }
+            // Caminho de mídia: roteado DIRETO na fila do servidor (NUNCA na main thread).
+            // O consumidor (AppState) configura o decoder aqui e só atualiza @Published via main.
+            onVideoConfig?(cfg)
 
         case .videoFrame:
             guard handshakeDone, let frame = VideoFramePayload.decode(msg.payload) else { return }
@@ -214,7 +216,8 @@ final class MirrorServer {
                 streamingNotified = true
                 emitStatus(.streaming)
             }
-            dispatchMain { self.onVideoFrame?(frame) }
+            // Decode fora da main thread: entregamos o frame na fila do servidor.
+            onVideoFrame?(frame)
 
         case .orientation:
             guard let o = try? JSONDecoder().decode(Orientation.self, from: msg.payload) else { return }

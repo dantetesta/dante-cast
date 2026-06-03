@@ -25,6 +25,15 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Interface") {
+                Picker("Aparência", selection: binding(\.appearance)) {
+                    ForEach(AppAppearance.allCases) { a in
+                        Label(a.rawValue, systemImage: a.systemImage).tag(a)
+                    }
+                }
+                Toggle("Moldura de smartphone no espelhamento", isOn: binding(\.showDeviceFrame))
+            }
+
             Section("Servidor") {
                 HStack {
                     Text("Porta TCP")
@@ -43,6 +52,13 @@ struct SettingsView: View {
             }
 
             Section("Gravações e Capturas") {
+                Toggle("Gravar com áudio do microfone", isOn: binding(\.recordAudio))
+                if app.settings.recordAudio {
+                    Label("Na primeira gravação o macOS pedirá permissão de microfone.",
+                          systemImage: "mic")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 HStack {
                     Text("Pasta")
                     Spacer()

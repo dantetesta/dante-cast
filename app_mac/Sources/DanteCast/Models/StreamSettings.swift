@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// Qualidade desejada do stream. Cada nível mapeia para um bitrate sugerido.
 enum StreamQuality: String, Codable, CaseIterable, Identifiable {
@@ -45,6 +46,32 @@ enum StreamFPS: Int, Codable, CaseIterable, Identifiable {
     var label: String { "\(rawValue) fps" }
 }
 
+/// Aparência da interface (skin): segue o sistema, ou força claro/escuro.
+enum AppAppearance: String, Codable, CaseIterable, Identifiable {
+    case system = "Sistema"
+    case light = "Claro"
+    case dark = "Escuro"
+
+    var id: String { rawValue }
+
+    /// ColorScheme correspondente para `.preferredColorScheme` (nil = segue o sistema).
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light:  return .light
+        case .dark:   return .dark
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .system: return "circle.lefthalf.filled"
+        case .light:  return "sun.max"
+        case .dark:   return "moon"
+        }
+    }
+}
+
 /// Configurações de stream persistidas e enviadas ao Android.
 struct StreamSettings: Codable, Equatable {
     var quality: StreamQuality
@@ -53,6 +80,9 @@ struct StreamSettings: Codable, Equatable {
     var bitrate: Int          // bps; pode ser ajustado manualmente
     var port: UInt16          // porta TCP do servidor
     var recordingFolderPath: String?  // pasta onde gravações/screenshots são salvos
+    var appearance: AppAppearance = .system   // skin claro/escuro/sistema
+    var recordAudio: Bool = false             // incluir áudio do microfone na gravação
+    var showDeviceFrame: Bool = true          // moldura de smartphone no viewer
 
     /// Preset padrão equilibrado.
     static let `default` = StreamSettings(
@@ -61,7 +91,10 @@ struct StreamSettings: Codable, Equatable {
         fps: .fps30,
         bitrate: StreamQuality.medium.suggestedBitrate,
         port: 7843,
-        recordingFolderPath: nil
+        recordingFolderPath: nil,
+        appearance: .system,
+        recordAudio: false,
+        showDeviceFrame: true
     )
 
     /// Aplica os bitrates/dimensões coerentes ao mudar a qualidade.

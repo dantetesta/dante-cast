@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import AppKit
+import AVFoundation
 import CoreVideo
 import CoreMedia
 
@@ -121,17 +122,21 @@ final class AppState: ObservableObject {
             self.lastError = nil
             Log.app.info("Dispositivo pareado: \(hello.device.name)")
         }
+        // Importante: as closures de VÍDEO capturam o `decoder` diretamente (não `self`),
+        // pois são chamadas na fila do servidor — assim o decode roda FORA da main thread.
+        // Só atualizamos @Published (UI) via main.async.
+        let decoder = self.decoder
         server.onVideoConfig = { [weak self] config in
-            guard let self = self else { return }
-            self.decoder.configure(with: config)
-            // Atualiza tamanho lógico (orientação pode sobrescrever).
+            decoder.configure(with: config)   // thread-safe (lock interno)
             if config.width > 0 && config.height > 0 {
-                self.videoSize = CGSize(width: Int(config.width), height: Int(config.height))
-                self.currentSession?.resolution = "\(config.width)x\(config.height)"
+                DispatchQueue.main.async {
+                    self?.videoSize = CGSize(width: Int(config.width), height: Int(config.height))
+                    self?.currentSession?.resolution = "\(config.width)x\(config.height)"
+                }
             }
         }
-        server.onVideoFrame = { [weak self] frame in
-            self?.decoder.decode(frame: frame)
+        server.onVideoFrame = { frame in
+            decoder.decode(frame: frame)       // decode fora da main thread
         }
         server.onOrientation = { [weak self] o in
             guard let self = self else { return }
@@ -213,8 +218,20 @@ final class AppState: ObservableObject {
             lastError = "Sem vídeo para gravar ainda."
             return
         }
+        // Com áudio: garante a permissão de microfone antes de iniciar.
+        if settings.recordAudio,
+           AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in
+                DispatchQueue.main.async { self?.beginRecording() }
+            }
+            return
+        }
+        beginRecording()
+    }
+
+    private func beginRecording() {
         let folder = recordingsFolder()
-        if recorder.start(in: folder, size: videoSize) != nil {
+        if recorder.start(in: folder, size: videoSize, includeAudio: settings.recordAudio) != nil {
             isRecording = true
         } else {
             lastError = "Não foi possível iniciar a gravação."

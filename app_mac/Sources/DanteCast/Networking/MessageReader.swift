@@ -8,6 +8,9 @@ import Foundation
 final class MessageReader {
 
     private var buffer = Data()
+    /// Cursor de leitura: índice (relativo a buffer.startIndex) do próximo byte não consumido.
+    /// Evita `removeSubrange` pela frente (O(n) por mensagem). Compactamos só de vez em quando.
+    private var readOffset = 0
 
     /// Acrescenta bytes recém-chegados ao buffer interno.
     func append(_ data: Data) {
@@ -18,14 +21,14 @@ final class MessageReader {
     /// Lança ParseError se encontrar um header inválido (conexão deve cair).
     func drain() throws -> [DCWP.Message] {
         var messages: [DCWP.Message] = []
+        let base = buffer.startIndex
 
         while true {
+            let available = buffer.count - readOffset
             // Precisa de pelo menos um header completo.
-            guard buffer.count >= DCWP.headerSize else { break }
+            guard available >= DCWP.headerSize else { break }
 
-            // O Data pode ter startIndex != 0 após subdatas; normalizamos lendo
-            // sempre a partir do startIndex atual.
-            let start = buffer.startIndex
+            let start = base + readOffset
             let header: (type: DCWP.MessageType, flags: UInt16, payloadLength: UInt32)
             do {
                 header = try DCWP.parseHeader(buffer, at: start)
@@ -36,7 +39,7 @@ final class MessageReader {
 
             let total = DCWP.headerSize + Int(header.payloadLength)
             // Ainda não chegou o payload inteiro -> espera mais bytes.
-            guard buffer.count >= total else { break }
+            guard available >= total else { break }
 
             let payloadStart = start + DCWP.headerSize
             let payloadEnd = start + total
@@ -46,8 +49,19 @@ final class MessageReader {
                                          flags: header.flags,
                                          payload: payload))
 
-            // Remove a mensagem consumida do início do buffer.
-            buffer.removeSubrange(start..<payloadEnd)
+            // Apenas avança o cursor — sem mover bytes.
+            readOffset += total
+        }
+
+        // Compacta quando já consumimos bastante (evita crescimento ilimitado do buffer),
+        // mas não a cada mensagem (mantém amortizado O(1)).
+        if readOffset > 0 && (readOffset == buffer.count || readOffset >= 1 << 20) {
+            if readOffset >= buffer.count {
+                buffer.removeAll(keepingCapacity: true)
+            } else {
+                buffer.removeSubrange(base..<(base + readOffset))
+            }
+            readOffset = 0
         }
 
         return messages
@@ -56,5 +70,6 @@ final class MessageReader {
     /// Limpa todo o estado (ao desconectar).
     func reset() {
         buffer.removeAll(keepingCapacity: false)
+        readOffset = 0
     }
 }

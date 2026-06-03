@@ -47,6 +47,17 @@ class H264Encoder(
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
             // VBR para qualidade estável; CBR também é aceitável dependendo do device.
             setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
+            // --- Baixa latência (anti-lag) ---
+            // Prioridade tempo-real (0 = realtime, 1 = best-effort).
+            setInteger(MediaFormat.KEY_PRIORITY, 0)
+            // Pede ao encoder a maior taxa de operação possível (não limita a fps).
+            setInteger(MediaFormat.KEY_OPERATING_RATE, Short.MAX_VALUE.toInt())
+            // Latência de 1 frame (sem reordenação/B-frames acumulados), onde suportado.
+            setInteger(MediaFormat.KEY_LATENCY, 1)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                // Modo de baixa latência explícito (API 30+) — ignorado se não suportado.
+                runCatching { setInteger(MediaFormat.KEY_LOW_LATENCY, 1) }
+            }
             // Não forçamos profile/level: deixar o encoder escolher maximiza a compatibilidade
             // entre devices (forçar Baseline+nível fixo pode falhar em configure() em alguns SoCs).
         }

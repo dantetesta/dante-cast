@@ -188,6 +188,8 @@ cat > "${CONTENTS}/Info.plist" <<PLIST
 	<string>public.app-category.utilities</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>O Dante Cast recebe o vídeo do seu Android pela rede local.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>O Dante Cast usa o microfone para gravar narração junto com o espelhamento (opcional).</string>
 ${ICON_ENTRY}
 </dict>
 </plist>

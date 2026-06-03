@@ -45,9 +45,11 @@ class MirrorClient(
     private var input: DataInputStream? = null
 
     // Fila de saída: frames já serializados (header + payload).
-    // Capacidade limitada + DROP_OLDEST evita acúmulo de memória se a rede engasgar:
-    // preferimos descartar frames antigos (latência) a estourar RAM.
-    private val outbound = Channel<ByteArray>(capacity = 64, onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST)
+    // Capacidade PEQUENA (anti-lag): se a rede engasga, descartamos os frames MAIS
+    // ANTIGOS (DROP_OLDEST) e sempre enviamos os mais recentes — mantendo a latência
+    // baixa. Uma fila grande (ex.: 64) acumularia ~2s de vídeo atrasado sob congestão.
+    // O decoder se recupera dos descartes no próximo keyframe (I-frame a cada 1s).
+    private val outbound = Channel<ByteArray>(capacity = 6, onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST)
 
     private var writerJob: Job? = null
     private var readerJob: Job? = null
