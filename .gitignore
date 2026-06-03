@@ -14,6 +14,7 @@ app_mac/DerivedData/
 
 # ===== app_android (Gradle) — artefatos de build =====
 app_android/.gradle/
+app_android/.kotlin/
 app_android/build/
 app_android/app/build/
 app_android/captures/
