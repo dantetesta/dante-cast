@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Tema base do app. A UI é em Compose (MaterialTheme), então aqui usamos
+        um tema "NoActionBar" do Material3 apenas para a janela/splash/system bars.
+    -->
+    <style name="Theme.DanteCast" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/brand_purple_dark</item>
+    </style>
+</resources>

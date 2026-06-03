@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ====== Identidade ====== -->
+    <string name="app_name">Dante Cast</string>
+    <string name="app_tagline">Espelhe a tela do seu Android no Mac</string>
+
+    <!-- ====== Welcome ====== -->
+    <string name="welcome_title">Bem-vindo ao Dante Cast</string>
+    <string name="welcome_subtitle">Transmita a tela do seu celular para o seu Mac com baixa latência, via Wi-Fi.</string>
+    <string name="welcome_step1_title">1. Abra o Dante Cast no Mac</string>
+    <string name="welcome_step1_desc">Ele vai exibir um QR Code de pareamento.</string>
+    <string name="welcome_step2_title">2. Escaneie o QR Code</string>
+    <string name="welcome_step2_desc">Use a câmera deste app para parear os dispositivos.</string>
+    <string name="welcome_step3_title">3. Conceda a permissão de captura</string>
+    <string name="welcome_step3_desc">O Android pedirá autorização para gravar a tela.</string>
+    <string name="welcome_cta">Conectar ao Mac</string>
+
+    <!-- ====== QR / Pareamento ====== -->
+    <string name="qr_title">Escanear QR Code</string>
+    <string name="qr_instruction">Aponte a câmera para o QR Code exibido no Dante Cast do seu Mac.</string>
+    <string name="qr_permission_needed">Precisamos da câmera para ler o QR Code.</string>
+    <string name="qr_grant_camera">Permitir câmera</string>
+    <string name="qr_manual_title">Inserir manualmente</string>
+    <string name="qr_manual_toggle">Inserir dados manualmente</string>
+    <string name="qr_field_ip">Endereço IP do Mac</string>
+    <string name="qr_field_port">Porta</string>
+    <string name="qr_field_token">Token</string>
+    <string name="qr_field_name">Nome do Mac (opcional)</string>
+    <string name="qr_connect">Conectar</string>
+    <string name="qr_invalid">QR Code inválido. Tente novamente.</string>
+
+    <!-- ====== Permissão de captura ====== -->
+    <string name="perm_title">Permissão de captura de tela</string>
+    <string name="perm_desc">Para espelhar, o Android precisa da sua autorização para capturar o conteúdo da tela. Nada é gravado sem o seu consentimento.</string>
+    <string name="perm_privacy">A imagem é enviada apenas ao Mac pareado, na sua rede local.</string>
+    <string name="perm_cta">Autorizar e iniciar</string>
+    <string name="perm_notifications_rationale">Permita as notificações para acompanhar e controlar a transmissão.</string>
+
+    <!-- ====== Streaming ====== -->
+    <string name="stream_title">Transmitindo</string>
+    <string name="stream_connected_to">Conectado a</string>
+    <string name="stream_resolution">Resolução</string>
+    <string name="stream_fps">FPS</string>
+    <string name="stream_bitrate">Bitrate</string>
+    <string name="stream_elapsed">Tempo</string>
+    <string name="stream_latency">Latência</string>
+    <string name="stream_stop">PARAR</string>
+    <string name="stream_starting">Iniciando transmissão…</string>
+
+    <!-- ====== Settings ====== -->
+    <string name="settings_title">Configurações</string>
+    <string name="settings_resolution">Resolução</string>
+    <string name="settings_fps">Taxa de quadros</string>
+    <string name="settings_bitrate">Bitrate (Mbps)</string>
+    <string name="settings_res_720">720p</string>
+    <string name="settings_res_1080">1080p</string>
+    <string name="settings_res_native">Nativa</string>
+
+    <!-- ====== Notificação ====== -->
+    <string name="notif_channel_name">Espelhamento de tela</string>
+    <string name="notif_channel_desc">Mostra o status da transmissão em andamento.</string>
+    <string name="notif_title">Dante Cast ativo</string>
+    <string name="notif_text">Transmitindo a tela para o Mac.</string>
+    <string name="notif_stop">Parar</string>
+
+    <!-- ====== Estados / erros ====== -->
+    <string name="state_connecting">Conectando ao Mac…</string>
+    <string name="state_handshake">Pareando…</string>
+    <string name="state_rejected">Conexão recusada pelo Mac.</string>
+    <string name="state_disconnected">Desconectado.</string>
+    <string name="state_error">Ocorreu um erro.</string>
+    <string name="action_retry">Tentar novamente</string>
+    <string name="action_back">Voltar</string>
+    <string name="action_settings">Configurações</string>
+</resources>

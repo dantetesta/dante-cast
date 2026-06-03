@@ -1,0 +1,26 @@
+# ===== macOS / sistema =====
+.DS_Store
+*.swp
+.idea/
+*.iml
+
+# ===== app_mac (Swift) — artefatos de build =====
+app_mac/.build/
+app_mac/build/
+app_mac/DanteCast.app/
+app_mac/*.dmg
+app_mac/*.xcodeproj/
+app_mac/DerivedData/
+
+# ===== app_android (Gradle) — artefatos de build =====
+app_android/.gradle/
+app_android/build/
+app_android/app/build/
+app_android/captures/
+app_android/local.properties
+app_android/out/
+app_android/*.apk
+app_android/*.aab
+
+# NÃO ignorar o gradle-wrapper.jar (necessário p/ ./gradlew):
+!app_android/gradle/wrapper/gradle-wrapper.jar

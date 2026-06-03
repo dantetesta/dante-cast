@@ -1,0 +1,58 @@
+# XcodeGen project spec — opcional.
+# Permite gerar um projeto Xcode a partir das fontes existentes:
+#
+#   brew install xcodegen   # se necessário
+#   cd app_mac
+#   xcodegen generate
+#   open DanteCast.xcodeproj
+#
+# O build via linha de comando (build_dmg.sh) NÃO depende deste arquivo.
+
+name: DanteCast
+options:
+  bundleIdPrefix: com.dantetesta.dantecast
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_HARDENED_RUNTIME: YES
+
+targets:
+  DanteCast:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: Sources/DanteCast
+    info:
+      path: Sources/DanteCast/Info.plist
+      properties:
+        CFBundleName: "Dante Cast"
+        CFBundleDisplayName: "Dante Cast"
+        CFBundleIdentifier: com.dantetesta.dantecast.mac
+        CFBundlePackageType: APPL
+        LSMinimumSystemVersion: "13.0"
+        NSHighResolutionCapable: true
+        NSPrincipalClass: NSApplication
+        LSApplicationCategoryType: public.app-category.utilities
+        NSLocalNetworkUsageDescription: "O Dante Cast recebe o vídeo do seu Android pela rede local."
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dantetesta.dantecast.mac
+        INFOPLIST_KEY_NSPrincipalClass: NSApplication
+    dependencies:
+      - sdk: SwiftUI.framework
+      - sdk: AppKit.framework
+      - sdk: AVFoundation.framework
+      - sdk: VideoToolbox.framework
+      - sdk: CoreMedia.framework
+      - sdk: CoreVideo.framework
+      - sdk: CoreImage.framework
+      - sdk: Network.framework

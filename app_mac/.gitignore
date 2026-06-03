@@ -1,0 +1,15 @@
+# Build artifacts
+.build/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+
+# Output
+DanteCast.dmg
+
+# macOS
+.DS_Store
+
+# Xcode user data
+xcuserdata/
+*.xcuserstate

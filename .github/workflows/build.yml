@@ -1,0 +1,116 @@
+name: Build Dante Cast
+
+# Compila os dois apps nos runners do GitHub (Xcode no macOS, Android SDK no Ubuntu).
+# - push em main / workflow_dispatch  -> compila e sobe os artefatos do run
+# - push de tag v*                    -> compila e PUBLICA um Release com os binários anexados
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # macOS — gera DanteCast.dmg (Apple Silicon)
+  # ---------------------------------------------------------------------------
+  macos:
+    name: Build macOS (.dmg)
+    runs-on: macos-14            # arm64 (Apple Silicon), Xcode completo
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          swift --version
+          xcodebuild -version || true
+
+      - name: Build DMG
+        working-directory: app_mac
+        run: |
+          chmod +x build_dmg.sh
+          ./build_dmg.sh
+
+      - name: Verificar artefato
+        working-directory: app_mac
+        run: |
+          ls -lh DanteCast.dmg
+          file DanteCast.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DanteCast-dmg
+          path: app_mac/DanteCast.dmg
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Android — gera DanteCast.apk (release) + DanteCast-debug.apk (fallback)
+  # ---------------------------------------------------------------------------
+  android:
+    name: Build Android (.apk)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build APKs (debug + release)
+        working-directory: app_android
+        run: |
+          chmod +x gradlew
+          # debug primeiro (sempre instalável); release em seguida (minificado/R8).
+          ./gradlew :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Coletar APKs
+        working-directory: app_android
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/app-release.apk out/DanteCast.apk
+          cp app/build/outputs/apk/debug/app-debug.apk     out/DanteCast-debug.apk
+          ls -lh out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DanteCast-apk
+          path: app_android/out/*.apk
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Release — só em tags v*. Baixa os artefatos e publica o Release.
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publicar Release
+    needs: [ macos, android ]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Listar binários
+        run: ls -lhR dist
+
+      - name: Criar GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "Dante Cast ${GITHUB_REF_NAME}" \
+            --notes "Builds automáticos do Dante Cast.
+
+          - **DanteCast.dmg** — app macOS (Apple Silicon, macOS 13+). Não assinado: no 1º uso, clique com o botão direito → Abrir.
+          - **DanteCast.apk** — app Android (release, minificado). Instale via sideload (ative 'Fontes desconhecidas').
+          - **DanteCast-debug.apk** — variante debug (fallback, sempre instalável).
+
+          Consulte o README e a pasta docs/ para arquitetura, protocolo e instruções."

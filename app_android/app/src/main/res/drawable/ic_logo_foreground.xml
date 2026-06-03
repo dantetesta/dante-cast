@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Foreground do ícone adaptativo + logo da marca.
+    Desenho: um "cast"/espelhamento estilizado (telinha + ondas) dentro do safe zone.
+    Viewport 108dp (padrão adaptive icon); arte centralizada no safe zone (~66dp).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Tela/monitor (corpo) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M30,40 m0,6 a6,6 0 0 1 6,-6 h36 a6,6 0 0 1 6,6 v22 a6,6 0 0 1 -6,6 h-36 a6,6 0 0 1 -6,-6 z" />
+
+    <!-- "Buraco" interno da tela (recorte) -->
+    <path
+        android:fillColor="#FF3A2A8C"
+        android:pathData="M36,48 h36 v18 h-36 z" />
+
+    <!-- Ondas de transmissão (cast) -->
+    <path
+        android:strokeColor="#FF2BD9C8"
+        android:strokeWidth="3.4"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M42,52 a8,8 0 0 1 8,8" />
+    <path
+        android:strokeColor="#FF2BD9C8"
+        android:strokeWidth="3.4"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M42,46 a14,14 0 0 1 14,14" />
+    <!-- Ponto da fonte de transmissão -->
+    <path
+        android:fillColor="#FF2BD9C8"
+        android:pathData="M42,60 m-3,0 a3,3 0 1 0 6,0 a3,3 0 1 0 -6,0" />
+</vector>
