@@ -72,6 +72,9 @@ dependencies {
     // AndroidX base
     implementation(libs.androidx.core.ktx)
 
+    // Material Components — temas XML Theme.Material3.* (janela/splash da Activity)
+    implementation(libs.material)
+
     // Lifecycle / ViewModel
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)

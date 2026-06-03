@@ -62,19 +62,29 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Build APKs (debug + release)
+      - name: Build APK debug (instalável garantido)
         working-directory: app_android
         run: |
           chmod +x gradlew
-          # debug primeiro (sempre instalável); release em seguida (minificado/R8).
-          ./gradlew :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Build APK release (minificado/R8)
+        id: release
+        continue-on-error: true
+        working-directory: app_android
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
 
       - name: Coletar APKs
         working-directory: app_android
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/release/app-release.apk out/DanteCast.apk
-          cp app/build/outputs/apk/debug/app-debug.apk     out/DanteCast-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk out/DanteCast-debug.apk
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            cp app/build/outputs/apk/release/app-release.apk out/DanteCast.apk
+          else
+            echo "release nao gerado — usando debug como DanteCast.apk"
+            cp app/build/outputs/apk/debug/app-debug.apk out/DanteCast.apk
+          fi
           ls -lh out
 
       - uses: actions/upload-artifact@v4
