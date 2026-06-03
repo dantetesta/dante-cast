@@ -5,6 +5,18 @@ interface bonita e pareamento simples por QR Code. Engine própria (H.264 + TCP)
 
 > Projeto interno: _DroidMirror Studio_ · Nome comercial do app: **Dante Cast**
 
+## ⬇️ Downloads (para clientes)
+
+Builds prontos na página de **[Releases](https://github.com/dantetesta/dante-cast/releases/latest)**:
+
+| Plataforma | Arquivo | Observação |
+|-----------|---------|------------|
+| 🍎 macOS (Apple Silicon, 13+) | **DanteCast.dmg** | Não assinado: no 1º uso, botão direito → **Abrir**. |
+| 🤖 Android (8.0+ / API 26+) | **DanteCast.apk** | Instale via sideload (ative "Fontes desconhecidas"). |
+| 🤖 Android (fallback) | **DanteCast-debug.apk** | Variante debug, sempre instalável. |
+
+Repositório: **https://github.com/dantetesta/dante-cast** · CI: GitHub Actions (compila e publica os binários a cada tag `v*`).
+
 ```
 ┌──────────────────────┐        Wi‑Fi / LAN         ┌──────────────────────┐
 │   Android (Companion) │  ──── H.264 sobre TCP ───▶ │     Mac (Receiver)    │
