@@ -5,12 +5,27 @@ struct ContentView: View {
     @EnvironmentObject var app: AppState
 
     var body: some View {
+        Group {
+            if app.stageMode {
+                // Modo Flutuante/Palco: só a moldura do celular sobre fundo transparente.
+                StageView()
+            } else {
+                normalLayout
+            }
+        }
+        // Skin: segue o sistema, ou força claro/escuro conforme os Ajustes.
+        .preferredColorScheme(app.settings.appearance.colorScheme)
+    }
+
+    /// Layout normal: sidebar + detail + banner de erro.
+    private var normalLayout: some View {
         NavigationSplitView {
             sidebar
         } detail: {
             detail
                 .frame(minWidth: 640, minHeight: 480)
         }
+        .frame(minWidth: 880, minHeight: 600)
         // Banner de erro global (não bloqueante).
         .overlay(alignment: .bottom) {
             if let error = app.lastError {
@@ -19,8 +34,6 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut, value: app.lastError)
-        // Skin: segue o sistema, ou força claro/escuro conforme os Ajustes.
-        .preferredColorScheme(app.settings.appearance.colorScheme)
     }
 
     // MARK: - Sidebar

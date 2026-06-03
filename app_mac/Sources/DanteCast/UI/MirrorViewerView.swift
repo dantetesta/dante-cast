@@ -39,6 +39,8 @@ struct MirrorViewerView: View {
             }
             ToolbarButton(title: "No topo", systemImage: "pin",
                           isActive: app.isAlwaysOnTop) { app.toggleAlwaysOnTop() }
+            ToolbarButton(title: "Flutuante", systemImage: "macwindow.on.rectangle",
+                          isActive: app.stageMode) { app.toggleStageMode() }
             ToolbarButton(title: "Girar", systemImage: "rotate.right") { app.rotateClockwise() }
             ToolbarButton(title: "Moldura", systemImage: "iphone",
                           isActive: app.settings.showDeviceFrame) {
@@ -53,6 +55,12 @@ struct MirrorViewerView: View {
             ToolbarButton(title: app.isRecording ? "Parar" : "Gravar",
                           systemImage: app.isRecording ? "stop.circle.fill" : "record.circle",
                           isActive: app.isRecording, tint: .red) { app.toggleRecording() }
+
+            // Grupo: volume (só quando há áudio do device).
+            if app.hasDeviceAudio {
+                groupDivider
+                volumeControl
+            }
 
             groupDivider
 
@@ -82,6 +90,21 @@ struct MirrorViewerView: View {
         Divider().frame(height: 34).padding(.horizontal, 2)
     }
 
+    /// Controle de volume + mute do áudio do dispositivo.
+    private var volumeControl: some View {
+        HStack(spacing: 6) {
+            Button { app.toggleMute() } label: {
+                Image(systemName: app.isMuted || app.volume == 0
+                      ? "speaker.slash.fill" : "speaker.wave.2.fill")
+            }
+            .buttonStyle(.borderless)
+            .help(app.isMuted ? "Reativar som" : "Silenciar")
+            Slider(value: Binding(get: { app.volume }, set: { app.setVolume($0) }), in: 0...1)
+                .frame(width: 90)
+        }
+        .help("Volume do áudio do dispositivo")
+    }
+
     // MARK: - Área de vídeo
 
     /// Proporção efetiva (considerando rotação) para a moldura.
@@ -98,10 +121,14 @@ struct MirrorViewerView: View {
 
             if app.settings.showDeviceFrame && app.videoSize.width > 0 {
                 DeviceFrameView(aspect: effectiveAspect) {
-                    VideoRendererView(rotation: app.rotation) { app.attachRenderView($0) }
+                    VideoRendererView(rotation: app.rotation, videoSize: app.videoSize) {
+                        app.attachRenderView($0)
+                    }
                 }
             } else {
-                VideoRendererView(rotation: app.rotation) { app.attachRenderView($0) }
+                VideoRendererView(rotation: app.rotation, videoSize: app.videoSize) {
+                    app.attachRenderView($0)
+                }
             }
 
             overlay

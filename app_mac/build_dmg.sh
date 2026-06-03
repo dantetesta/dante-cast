@@ -21,6 +21,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_NAME="DanteCast"
 APP_DISPLAY="Dante Cast"
 BUNDLE_ID="com.dantetesta.dantecast.mac"
+# Versão do app macOS — versionada de forma INDEPENDENTE do Android.
+APP_VERSION="1.2.0"
 MIN_MACOS="13.0"
 TARGET="arm64-apple-macosx${MIN_MACOS}"
 
@@ -173,9 +175,9 @@ cat > "${CONTENTS}/Info.plist" <<PLIST
 	<key>CFBundleIdentifier</key>
 	<string>${BUNDLE_ID}</string>
 	<key>CFBundleVersion</key>
-	<string>1.0</string>
+	<string>${APP_VERSION}</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>${APP_VERSION}</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>LSMinimumSystemVersion</key>

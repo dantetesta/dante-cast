@@ -43,9 +43,21 @@ final class AppState: ObservableObject {
 
     @Published var latencyMs: Double = 0
     @Published var isRecording = false
-    @Published var rotation: Int = 0                 // 0/90/180/270
-    @Published var videoSize: CGSize = .zero         // resolução do stream atual
+    @Published var rotation: Int = 0                 // override MANUAL de rotação (0/90/180/270)
+    @Published var videoSize: CGSize = .zero         // resolução do stream atual (já orientada)
     @Published var isAlwaysOnTop = false
+
+    // Áudio do device (Android envia o áudio interno).
+    @Published var volume: Double = 1.0              // 0...1
+    @Published var isMuted = false
+    @Published var hasDeviceAudio = false            // true ao receber o 1º AUDIO_CONFIG
+
+    // Modo "Flutuante/Palco": janela transparente só com a moldura do celular.
+    @Published var stageMode = false
+
+    // Formato do áudio do device em recepção (para gravar a faixa correta).
+    private var deviceAudioSampleRate: Double = 0
+    private var deviceAudioChannels: Int = 0
 
     /// Info de pareamento atual (QR + payload). nil quando o servidor está parado.
     @Published var pairing: PairingService.PairingInfo?
@@ -55,6 +67,7 @@ final class AppState: ObservableObject {
     private let server = MirrorServer()
     private let decoder = H264Decoder()
     private let recorder = ScreenRecorder()
+    private let audioPlayer = AudioPlayer()
 
     /// View de renderização (definida pela SwiftUI ao aparecer).
     private weak var renderView: SampleBufferRenderView?
@@ -138,9 +151,37 @@ final class AppState: ObservableObject {
         server.onVideoFrame = { frame in
             decoder.decode(frame: frame)       // decode fora da main thread
         }
+        // Áudio do device: chamados na fila do servidor (sem hop pra main no hot path).
+        let audioPlayer = self.audioPlayer
+        let recorder = self.recorder
+        server.onAudioConfig = { [weak self] cfg in
+            // (Re)configura o player no formato anunciado pelo device.
+            audioPlayer.configure(sampleRate: Double(cfg.sampleRate),
+                                  channels: AVAudioChannelCount(cfg.channels),
+                                  interleaved: true)
+            // Sinaliza a UI (na main) e guarda o formato para gravação.
+            DispatchQueue.main.async {
+                self?.deviceAudioSampleRate = Double(cfg.sampleRate)
+                self?.deviceAudioChannels = Int(cfg.channels)
+                self?.hasDeviceAudio = true
+                // Aplica o volume/mute atuais ao novo pipeline.
+                if let self = self {
+                    audioPlayer.setVolume(Float(self.volume))
+                    audioPlayer.setMuted(self.isMuted)
+                }
+            }
+        }
+        server.onAudioFrame = { frame in
+            // Toca o PCM e (se gravando) alimenta a faixa de áudio do device.
+            audioPlayer.enqueue(pcm: frame.pcm)
+            recorder.appendDevicePCM(frame.pcm)
+        }
+        // ORIENTAÇÃO: NÃO aplicamos mais transform de rotação. O frame decodificado
+        // já vem com a orientação/dimensões corretas (o Android reenvia VIDEO_CONFIG
+        // com dimensões trocadas + keyframe ao girar). Aqui só sincronizamos o
+        // videoSize para o palco se ajustar (max zoom, aspect correto).
         server.onOrientation = { [weak self] o in
             guard let self = self else { return }
-            self.rotation = o.rotation
             if o.width > 0 && o.height > 0 {
                 self.videoSize = CGSize(width: o.width, height: o.height)
             }
@@ -152,11 +193,15 @@ final class AppState: ObservableObject {
         server.onClientDisconnected = { [weak self] in
             guard let self = self else { return }
             self.decoder.invalidate()
+            self.audioPlayer.teardown()
             self.renderView?.flush()
             self.currentSession?.endedAt = Date()
             self.currentSession?.status = .disconnected
             if self.isRecording { self.stopRecording() }
             self.latencyMs = 0
+            self.hasDeviceAudio = false
+            self.deviceAudioSampleRate = 0
+            self.deviceAudioChannels = 0
         }
     }
 
@@ -194,10 +239,12 @@ final class AppState: ObservableObject {
         if isRecording { stopRecording() }
         server.stop()
         decoder.invalidate()
+        audioPlayer.teardown()
         renderView?.flush()
         pairing = nil
         status = .idle
         latencyMs = 0
+        hasDeviceAudio = false
         currentSession?.endedAt = Date()
     }
 
@@ -218,9 +265,9 @@ final class AppState: ObservableObject {
             lastError = "Sem vídeo para gravar ainda."
             return
         }
-        // Com áudio: garante a permissão de microfone antes de iniciar.
-        if settings.recordAudio,
-           AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+        // Microfone só é necessário quando NÃO há áudio do device e o usuário pediu narração.
+        let wantsMic = settings.recordAudio && !hasDeviceAudio
+        if wantsMic, AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
             AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in
                 DispatchQueue.main.async { self?.beginRecording() }
             }
@@ -231,7 +278,17 @@ final class AppState: ObservableObject {
 
     private func beginRecording() {
         let folder = recordingsFolder()
-        if recorder.start(in: folder, size: videoSize, includeAudio: settings.recordAudio) != nil {
+        // Prioridade: áudio do DEVICE (o que está tocando no celular). Senão, microfone
+        // (narração), se o usuário ativou. Caso contrário, vídeo-only.
+        let audioMode: RecordingAudio
+        if hasDeviceAudio, deviceAudioSampleRate > 0, deviceAudioChannels > 0 {
+            audioMode = .device(sampleRate: deviceAudioSampleRate, channels: deviceAudioChannels)
+        } else if settings.recordAudio {
+            audioMode = .microphone
+        } else {
+            audioMode = .none
+        }
+        if recorder.start(in: folder, size: videoSize, audio: audioMode) != nil {
             isRecording = true
         } else {
             lastError = "Não foi possível iniciar a gravação."
@@ -258,10 +315,86 @@ final class AppState: ObservableObject {
         }
     }
 
-    // MARK: - Rotação manual
+    // MARK: - Rotação manual (override opcional; a orientação automática vem do frame)
 
     func rotateClockwise() {
         rotation = (rotation + 90) % 360
+    }
+
+    // MARK: - Áudio: volume / mute
+
+    func setVolume(_ value: Double) {
+        volume = max(0, min(1, value))
+        if isMuted && volume > 0 { isMuted = false }   // mexer no slider desfaz o mute
+        audioPlayer.setVolume(Float(volume))
+        audioPlayer.setMuted(isMuted)
+    }
+
+    func toggleMute() {
+        isMuted.toggle()
+        audioPlayer.setMuted(isMuted)
+    }
+
+    // MARK: - Modo Flutuante / Palco (janela transparente só com a moldura)
+
+    func toggleStageMode() {
+        setStageMode(!stageMode)
+    }
+
+    func setStageMode(_ on: Bool) {
+        stageMode = on
+        // Aplica o estilo na próxima runloop (a janela pode ainda não existir/atualizar).
+        DispatchQueue.main.async { [weak self] in self?.applyStageWindowStyle() }
+    }
+
+    /// Mantém a proporção da janela igual à do vídeo no modo palco (max zoom, sem letterbox).
+    func updateStageAspect() {
+        guard stageMode, let window = mainWindow else { return }
+        let s = stageAspectSize
+        guard s.width > 0, s.height > 0 else { return }
+        window.contentAspectRatio = s
+    }
+
+    /// Proporção atual (considera o override manual de rotação).
+    private var stageAspectSize: NSSize {
+        let s = videoSize
+        guard s.width > 0, s.height > 0 else { return NSSize(width: 9, height: 19.5) }
+        return (rotation % 180 == 0)
+            ? NSSize(width: s.width, height: s.height)
+            : NSSize(width: s.height, height: s.width)
+    }
+
+    /// (Des)configura a janela para o modo flutuante de forma robusta (degrada se falhar).
+    private func applyStageWindowStyle() {
+        guard let window = mainWindow else { return }
+        if stageMode {
+            // Janela transparente, arrastável pelo corpo. Mantém .titled+.resizable
+            // (rounded corners + resize por borda) mas esconde a barra de título.
+            window.styleMask.insert(.resizable)
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.isMovableByWindowBackground = true
+            window.backgroundColor = .clear
+            window.isOpaque = false
+            window.hasShadow = false
+            window.standardWindowButton(.closeButton)?.isHidden = true
+            window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+            window.standardWindowButton(.zoomButton)?.isHidden = true
+            updateStageAspect()
+        } else {
+            // Restaura janela opaca padrão.
+            window.titlebarAppearsTransparent = false
+            window.titleVisibility = .visible
+            window.isMovableByWindowBackground = false
+            window.backgroundColor = .windowBackgroundColor
+            window.isOpaque = true
+            window.hasShadow = true
+            window.standardWindowButton(.closeButton)?.isHidden = false
+            window.standardWindowButton(.miniaturizeButton)?.isHidden = false
+            window.standardWindowButton(.zoomButton)?.isHidden = false
+            // Limpa a restrição de proporção do conteúdo (1×1 anula contentAspectRatio).
+            window.contentResizeIncrements = NSSize(width: 1, height: 1)
+        }
     }
 
     // MARK: - Janela: fullscreen / always-on-top

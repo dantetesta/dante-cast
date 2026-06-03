@@ -12,8 +12,14 @@ final class SampleBufferRenderView: NSView {
         layer as! AVSampleBufferDisplayLayer
     }
 
-    /// Rotação atual em graus (0/90/180/270) — aplicada via transform da camada.
+    /// Override MANUAL de rotação em graus (0/90/180/270).
+    /// A orientação AUTOMÁTICA NÃO é tratada aqui: o frame decodificado já vem com
+    /// as dimensões/orientação corretas (o Android reenvia VIDEO_CONFIG ao girar).
+    /// Este valor é só um override opcional acionado pelo botão "Girar".
     var rotationDegrees: Int = 0 { didSet { applyTransform() } }
+
+    /// Tamanho intrínseco do vídeo (em px) para dimensionar o layer rotacionado.
+    var videoPixelSize: CGSize = .zero { didSet { applyTransform() } }
 
     /// Cache do format description (recriar por frame é desperdício de CPU).
     private var cachedFormat: CMVideoFormatDescription?
@@ -46,9 +52,28 @@ final class SampleBufferRenderView: NSView {
     private func applyTransform() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        displayLayer.frame = bounds
-        let radians = CGFloat(rotationDegrees) * .pi / 180
-        displayLayer.setAffineTransform(CGAffineTransform(rotationAngle: radians))
+        // Sempre reseta o transform antes de redefinir o frame (frame ignora rotações).
+        displayLayer.setAffineTransform(.identity)
+
+        let norm = ((rotationDegrees % 360) + 360) % 360
+        if norm == 0 || norm == 180 {
+            // Sem troca de eixos: o layer ocupa os bounds. .resizeAspect garante o
+            // max zoom com aspect correto. A orientação automática vem do próprio frame.
+            displayLayer.frame = bounds
+            if norm == 180 {
+                displayLayer.setAffineTransform(CGAffineTransform(rotationAngle: .pi))
+            }
+        } else {
+            // 90/270: o container (viewer/stage) está na proporção JÁ trocada.
+            // Dimensionamos o layer com largura/altura TROCADAS em relação aos bounds
+            // e centralizamos; após girar 90°, ele mapeia exatamente sobre os bounds,
+            // e o .resizeAspect preenche no maior tamanho mantendo o aspect.
+            let swapped = CGRect(x: 0, y: 0, width: bounds.height, height: bounds.width)
+            displayLayer.frame = swapped
+            displayLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
+            let radians = CGFloat(norm) * .pi / 180
+            displayLayer.setAffineTransform(CGAffineTransform(rotationAngle: radians))
+        }
         CATransaction.commit()
     }
 
@@ -125,19 +150,23 @@ final class SampleBufferRenderView: NSView {
 /// O `coordinator` recebe a view criada para que o AppState possa enfileirar frames.
 struct VideoRendererView: NSViewRepresentable {
 
-    /// Rotação aplicada (graus).
+    /// Rotação MANUAL aplicada (graus). 0 = orientação natural do frame.
     var rotation: Int
+    /// Tamanho do vídeo (px) para dimensionar a rotação manual.
+    var videoSize: CGSize
     /// Chamado quando a NSView é criada, expondo-a para enfileirar frames.
     var onMakeView: (SampleBufferRenderView) -> Void
 
     func makeNSView(context: Context) -> SampleBufferRenderView {
         let view = SampleBufferRenderView(frame: .zero)
+        view.videoPixelSize = videoSize
         view.rotationDegrees = rotation
         onMakeView(view)
         return view
     }
 
     func updateNSView(_ nsView: SampleBufferRenderView, context: Context) {
+        nsView.videoPixelSize = videoSize
         nsView.rotationDegrees = rotation
     }
 }

@@ -3,6 +3,7 @@ package com.dantetesta.dantecast.model
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -22,6 +23,7 @@ class SettingsRepository(private val context: Context) {
         val RESOLUTION = stringPreferencesKey("resolution")
         val FPS = intPreferencesKey("fps")
         val BITRATE = intPreferencesKey("bitrate")
+        val DEVICE_AUDIO = booleanPreferencesKey("device_audio")
     }
 
     /** Fluxo reativo das settings (com defaults quando ausente). */
@@ -29,7 +31,8 @@ class SettingsRepository(private val context: Context) {
         StreamSettings(
             resolution = Resolution.fromLabel(prefs[Keys.RESOLUTION] ?: Resolution.HD1080.label),
             fps = Fps.fromValue(prefs[Keys.FPS] ?: 30),
-            bitrate = prefs[Keys.BITRATE] ?: -1
+            bitrate = prefs[Keys.BITRATE] ?: -1,
+            deviceAudioEnabled = prefs[Keys.DEVICE_AUDIO] ?: false
         )
     }
 
@@ -44,5 +47,10 @@ class SettingsRepository(private val context: Context) {
     /** bitrate <= 0 significa "automático" (deriva do preset). */
     suspend fun setBitrate(bitrate: Int) {
         context.dataStore.edit { it[Keys.BITRATE] = bitrate }
+    }
+
+    /** Liga/desliga a transmissão do áudio do dispositivo. */
+    suspend fun setDeviceAudioEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.DEVICE_AUDIO] = enabled }
     }
 }

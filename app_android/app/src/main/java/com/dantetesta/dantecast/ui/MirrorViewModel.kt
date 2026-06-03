@@ -66,6 +66,10 @@ class MirrorViewModel(app: Application) : AndroidViewModel(app) {
         settingsRepo.setBitrate(bitrateBps)
     }
 
+    fun updateDeviceAudio(enabled: Boolean) = viewModelScope.launch {
+        settingsRepo.setDeviceAudioEnabled(enabled)
+    }
+
     // ---------------- Sessão ----------------
 
     /**
@@ -95,7 +99,8 @@ class MirrorViewModel(app: Application) : AndroidViewModel(app) {
             prefResW = w,
             prefResH = h,
             prefFps = s.fps.value,
-            prefBitrate = bitrate
+            prefBitrate = bitrate,
+            deviceAudio = s.deviceAudioEnabled
         )
     }
 

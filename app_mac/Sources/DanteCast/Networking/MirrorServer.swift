@@ -19,6 +19,9 @@ final class MirrorServer {
     var onHello: ((Hello) -> Void)?                   // device conectado e validado
     var onVideoConfig: ((VideoConfigPayload) -> Void)?
     var onVideoFrame: ((VideoFramePayload) -> Void)?
+    // Áudio do device: chamados DIRETO na fila do servidor (como o vídeo), nunca na main.
+    var onAudioConfig: ((AudioConfigPayload) -> Void)?
+    var onAudioFrame: ((AudioFramePayload) -> Void)?
     var onOrientation: ((Orientation) -> Void)?
     var onPingRoundTrip: ((Double) -> Void)?          // latência em ms (estimada via PONG)
     var onClientDisconnected: (() -> Void)?
@@ -218,6 +221,16 @@ final class MirrorServer {
             }
             // Decode fora da main thread: entregamos o frame na fila do servidor.
             onVideoFrame?(frame)
+
+        case .audioConfig:
+            guard handshakeDone, let cfg = AudioConfigPayload.decode(msg.payload) else { return }
+            // Caminho de áudio: roteado DIRETO na fila do servidor (como o vídeo).
+            onAudioConfig?(cfg)
+
+        case .audioFrame:
+            guard handshakeDone, let frame = AudioFramePayload.decode(msg.payload) else { return }
+            // Agenda o PCM no player na própria fila do servidor (sem bloquear).
+            onAudioFrame?(frame)
 
         case .orientation:
             guard let o = try? JSONDecoder().decode(Orientation.self, from: msg.payload) else { return }

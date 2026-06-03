@@ -47,6 +47,12 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { /* resultado ignorado: o foreground service funciona mesmo sem, mas a notificação não aparece */ }
 
+    // Launcher para RECORD_AUDIO: ao resolver (concedido OU negado), seguimos para a captura.
+    // Áudio é OPCIONAL — negar não bloqueia o vídeo (o service apenas pula a captura de áudio).
+    private val audioPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { launchScreenCapture() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -68,8 +74,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Dispara o diálogo do sistema de captura de tela. */
+    /**
+     * Ponto de entrada da autorização. Se o áudio do dispositivo estiver LIGADO nas settings
+     * (e disponível no SO), pedimos RECORD_AUDIO ANTES da captura de tela; do contrário,
+     * vamos direto para a captura. O resultado da permissão de áudio nunca bloqueia o vídeo.
+     */
     private fun requestScreenCapture() {
+        val audioOn = viewModel.settings.value.deviceAudioEnabled &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+        val audioGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (audioOn && !audioGranted) {
+            // Após o usuário responder, o callback chama launchScreenCapture().
+            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        } else {
+            launchScreenCapture()
+        }
+    }
+
+    /** Dispara o diálogo do sistema de captura de tela. */
+    private fun launchScreenCapture() {
         val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         // createScreenCaptureIntent: o usuário verá o aviso de gravação de tela.
         captureLauncher.launch(mpm.createScreenCaptureIntent())

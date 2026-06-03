@@ -20,6 +20,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -28,7 +29,9 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import android.os.Build
 import com.dantetesta.dantecast.R
 import com.dantetesta.dantecast.model.BitratePresets
 import com.dantetesta.dantecast.model.Fps
@@ -46,6 +49,7 @@ fun SettingsScreen(
     onResolutionChange: (Resolution) -> Unit,
     onFpsChange: (Fps) -> Unit,
     onBitrateChange: (Int) -> Unit,
+    onDeviceAudioChange: (Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     Scaffold(
@@ -113,6 +117,37 @@ fun SettingsScreen(
                 "Maior bitrate = mais qualidade e mais uso de rede.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(Modifier.height(24.dp))
+
+            // ---- Áudio do dispositivo ----
+            // Captura de playback exige API 29+ (AudioPlaybackCaptureConfiguration).
+            SectionTitle(stringResOr(R.string.settings_audio))
+            val audioSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResOr(R.string.settings_audio_toggle),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.weight(1f).padding(end = 12.dp)
+                )
+                Switch(
+                    checked = audioSupported && settings.deviceAudioEnabled,
+                    onCheckedChange = { if (audioSupported) onDeviceAudioChange(it) },
+                    enabled = audioSupported
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                stringResOr(if (audioSupported) R.string.settings_audio_desc else R.string.settings_audio_unavailable),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Start
             )
 
             Spacer(Modifier.height(32.dp))

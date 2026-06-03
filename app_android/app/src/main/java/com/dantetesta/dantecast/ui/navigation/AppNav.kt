@@ -107,6 +107,7 @@ fun AppNav(
                 onResolutionChange = viewModel::updateResolution,
                 onFpsChange = viewModel::updateFps,
                 onBitrateChange = viewModel::updateBitrate,
+                onDeviceAudioChange = viewModel::updateDeviceAudio,
                 onBack = { navController.popBackStack() }
             )
         }

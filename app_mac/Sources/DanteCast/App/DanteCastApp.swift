@@ -11,7 +11,6 @@ struct DanteCastApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(appState)
-                .frame(minWidth: 880, minHeight: 600)
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
@@ -24,6 +23,10 @@ struct DanteCastApp: App {
                     appState.toggleAlwaysOnTop()
                 }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
+                Button(appState.stageMode ? "Sair do Modo Flutuante" : "Modo Flutuante") {
+                    appState.toggleStageMode()
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
             }
             CommandGroup(replacing: .help) {
                 Button("Ajuda do Dante Cast") { appState.screen = .help }

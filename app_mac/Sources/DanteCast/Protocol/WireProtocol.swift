@@ -29,6 +29,8 @@ enum DCWP {
         case helloAck     = 0x02  // M→A  JSON
         case videoConfig  = 0x10  // A→M  binário (SPS/PPS)
         case videoFrame   = 0x11  // A→M  binário (access unit)
+        case audioConfig  = 0x12  // A→M  binário (formato PCM do device)
+        case audioFrame   = 0x13  // A→M  binário (PCM int16 LE intercalado)
         case orientation  = 0x20  // A→M  JSON
         case ping         = 0x30  // bin 8B
         case pong         = 0x31  // bin 8B
@@ -210,6 +212,46 @@ struct VideoFramePayload {
         let key = (flags & 0x01) == 0x01
         let annex = payload.subdata(in: (base + subHeaderSize)..<payload.endIndex)
         return VideoFramePayload(ptsMicros: pts, isKeyframe: key, annexB: annex)
+    }
+}
+
+/// AUDIO_CONFIG: [sampleRate u32][channels u16][bitsPerSample u16] (8 bytes, BIG-ENDIAN).
+/// Descreve o formato do PCM que será enviado nos AUDIO_FRAME.
+struct AudioConfigPayload {
+    var sampleRate: UInt32
+    var channels: UInt16
+    var bitsPerSample: UInt16
+
+    static let size = 8
+
+    static func decode(_ payload: Data) -> AudioConfigPayload? {
+        guard payload.count >= size else { return nil }
+        let base = payload.startIndex
+        let sr = payload.readBE(UInt32.self, at: base + 0)
+        let ch = payload.readBE(UInt16.self, at: base + 4)
+        let bps = payload.readBE(UInt16.self, at: base + 6)
+        // Validação básica de sanidade (evita configurar engine com lixo).
+        guard sr >= 8_000, sr <= 192_000, ch >= 1, ch <= 8,
+              bps == 16 else { return nil }
+        return AudioConfigPayload(sampleRate: sr, channels: ch, bitsPerSample: bps)
+    }
+}
+
+/// AUDIO_FRAME: [ptsMicros i64 BE] (sub-header 8B big-endian) + PCM bruto.
+/// O PCM é signed **16-bit LITTLE-endian, intercalado** (não tocar nos bytes aqui;
+/// a conversão para Float32 acontece no AudioPlayer respeitando o endianness).
+struct AudioFramePayload {
+    var ptsMicros: Int64
+    var pcm: Data
+
+    static let subHeaderSize = 8  // 8 (pts)
+
+    static func decode(_ payload: Data) -> AudioFramePayload? {
+        guard payload.count >= subHeaderSize else { return nil }
+        let base = payload.startIndex
+        let pts = payload.readBE(Int64.self, at: base + 0)
+        let pcm = payload.subdata(in: (base + subHeaderSize)..<payload.endIndex)
+        return AudioFramePayload(ptsMicros: pts, pcm: pcm)
     }
 }
 

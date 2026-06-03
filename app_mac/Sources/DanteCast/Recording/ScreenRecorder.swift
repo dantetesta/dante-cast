@@ -11,8 +11,16 @@ import CoreMedia
 /// usa o relógio de captura do Mac, re-carimbamos o vídeo no host clock para que ambos
 /// compartilhem uma única timeline — caso contrário a faixa de áudio ficaria dessincronizada.
 ///
+/// Modo da faixa de áudio na gravação.
+enum RecordingAudio {
+    case none           // só vídeo
+    case microphone     // narração via microfone do Mac (captura AVCaptureSession)
+    case device(sampleRate: Double, channels: Int)  // áudio interno do device (PCM int16 LE)
+}
+
 /// Uso:
-///   start(in:size:includeAudio:) -> append(pixelBuffer:pts:) por frame -> stop { url,dur in ... }
+///   start(in:size:audio:) -> append(pixelBuffer:pts:) por frame
+///   [+ appendDevicePCM(...) quando audio == .device] -> stop { url,dur in ... }
 final class ScreenRecorder {
 
     private(set) var isRecording = false
@@ -28,6 +36,11 @@ final class ScreenRecorder {
     private let audioTap = AudioTap()
     private let audioQueue = DispatchQueue(label: "com.dantetesta.dantecast.recorder.audio")
 
+    // Áudio do device (PCM int16 LE): format description + posição na timeline do host clock.
+    private var deviceAudioFormat: CMAudioFormatDescription?
+    private var deviceAudioSampleRate: Double = 0
+    private var deviceAudioChannels: Int = 0
+
     private var sessionStarted = false
     private var startHostTime: CMTime = .zero
     private var startDate: Date?
@@ -38,13 +51,15 @@ final class ScreenRecorder {
     private func nowHostTime() -> CMTime { CMClockGetTime(hostClock) }
 
     /// Inicia a gravação. `size` deve casar com o tamanho dos pixel buffers.
-    /// `includeAudio` ativa a captura do microfone (degrada para vídeo-only se falhar).
+    /// `audio` escolhe a faixa de áudio (nenhuma, microfone, ou áudio do device).
+    /// Qualquer falha de áudio degrada para vídeo-only (sem crash).
     /// Retorna a URL de destino ou nil em caso de falha.
     @discardableResult
-    func start(in folder: URL, size: CGSize, includeAudio: Bool = false) -> URL? {
+    func start(in folder: URL, size: CGSize, audio: RecordingAudio = .none) -> URL? {
         lock.lock(); defer { lock.unlock() }
         guard !isRecording else { return outputURL }
         guard size.width > 0, size.height > 0 else { return nil }
+        deviceAudioFormat = nil
 
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
@@ -78,11 +93,21 @@ final class ScreenRecorder {
             w.add(inp)
 
             // ---- Faixa de áudio (opcional, best-effort) ----
-            if includeAudio, let aInput = setupAudioCapture(), w.canAdd(aInput) {
-                w.add(aInput)
-                self.audioInput = aInput
-            } else {
-                self.audioInput = nil
+            self.audioInput = nil
+            switch audio {
+            case .none:
+                break
+            case .microphone:
+                if let aInput = setupAudioCapture(), w.canAdd(aInput) {
+                    w.add(aInput)
+                    self.audioInput = aInput
+                }
+            case .device(let sr, let ch):
+                if let aInput = setupDeviceAudioInput(sampleRate: sr, channels: ch),
+                   w.canAdd(aInput) {
+                    w.add(aInput)
+                    self.audioInput = aInput
+                }
             }
 
             guard w.startWriting() else {
@@ -210,6 +235,102 @@ final class ScreenRecorder {
         audioTap.onSample = nil
         captureSession?.stopRunning()
         captureSession = nil
+        deviceAudioFormat = nil
+    }
+
+    // MARK: - Áudio do device (PCM int16 LE)
+
+    /// Monta o input de áudio (AAC) para o áudio interno do device e cacheia o
+    /// CMAudioFormatDescription do PCM de entrada (int16 LE intercalado).
+    private func setupDeviceAudioInput(sampleRate: Double, channels: Int) -> AVAssetWriterInput? {
+        guard sampleRate > 0, channels > 0 else { return nil }
+
+        // ASBD do PCM de entrada: int16 LE intercalado (signed, packed).
+        var asbd = AudioStreamBasicDescription(
+            mSampleRate: sampleRate,
+            mFormatID: kAudioFormatLinearPCM,
+            mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
+            mBytesPerPacket: UInt32(2 * channels),
+            mFramesPerPacket: 1,
+            mBytesPerFrame: UInt32(2 * channels),
+            mChannelsPerFrame: UInt32(channels),
+            mBitsPerChannel: 16,
+            mReserved: 0)
+
+        var fmt: CMAudioFormatDescription?
+        let st = CMAudioFormatDescriptionCreate(
+            allocator: kCFAllocatorDefault,
+            asbd: &asbd,
+            layoutSize: 0, layout: nil,
+            magicCookieSize: 0, magicCookie: nil,
+            extensions: nil,
+            formatDescriptionOut: &fmt)
+        guard st == noErr, let fmt = fmt else {
+            Log.record.error("Áudio do device: falha ao criar format description (\(st)).")
+            return nil
+        }
+        self.deviceAudioFormat = fmt
+        self.deviceAudioSampleRate = sampleRate
+        self.deviceAudioChannels = channels
+
+        // Input AAC no .mov (o writer transcodifica o LPCM do device).
+        let audioSettings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVNumberOfChannelsKey: channels,
+            AVSampleRateKey: sampleRate,
+            AVEncoderBitRateKey: 128_000
+        ]
+        let aInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
+        aInput.expectsMediaDataInRealTime = true
+        return aInput
+    }
+
+    /// Acrescenta um bloco de PCM (int16 LE intercalado) do device à faixa de áudio.
+    /// Carimba no host clock (mesma timeline do vídeo) para manter A/V em sincronia.
+    func appendDevicePCM(_ pcm: Data) {
+        lock.lock()
+        guard isRecording, sessionStarted,
+              let aInput = audioInput, let fmt = deviceAudioFormat,
+              aInput.isReadyForMoreMediaData, !pcm.isEmpty else { lock.unlock(); return }
+        let channels = deviceAudioChannels
+        lock.unlock()
+
+        let bytesPerFrame = 2 * channels
+        guard bytesPerFrame > 0 else { return }
+        let numFrames = pcm.count / bytesPerFrame
+        guard numFrames > 0 else { return }
+        let usableBytes = numFrames * bytesPerFrame
+
+        // CMBlockBuffer com cópia única dos bytes de PCM.
+        var block: CMBlockBuffer?
+        guard CMBlockBufferCreateWithMemoryBlock(
+            allocator: kCFAllocatorDefault, memoryBlock: nil,
+            blockLength: usableBytes, blockAllocator: kCFAllocatorDefault,
+            customBlockSource: nil, offsetToData: 0, dataLength: usableBytes,
+            flags: kCMBlockBufferAssureMemoryNowFlag,
+            blockBufferOut: &block) == kCMBlockBufferNoErr, let block = block else { return }
+
+        let copyOK = pcm.withUnsafeBytes { raw -> Bool in
+            guard let base = raw.baseAddress else { return false }
+            return CMBlockBufferReplaceDataBytes(
+                with: base, blockBuffer: block,
+                offsetIntoDestination: 0, dataLength: usableBytes) == kCMBlockBufferNoErr
+        }
+        guard copyOK else { return }
+
+        // PTS na timeline do host clock.
+        let pts = nowHostTime()
+        var sample: CMSampleBuffer?
+        let st = CMAudioSampleBufferCreateReadyWithPacketDescriptions(
+            allocator: kCFAllocatorDefault,
+            dataBuffer: block,
+            formatDescription: fmt,
+            sampleCount: numFrames,
+            presentationTimeStamp: pts,
+            packetDescriptions: nil,
+            sampleBufferOut: &sample)
+        guard st == noErr, let sample = sample else { return }
+        aInput.append(sample)
     }
 }
 

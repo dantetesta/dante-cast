@@ -31,6 +31,8 @@ Leitura: confere `magic` + `version`; se não bater, fecha a conexão (stream de
 | `0x02` | `HELLO_ACK`    | M → A     | JSON                   |
 | `0x10` | `VIDEO_CONFIG` | A → M     | binário (SPS/PPS)      |
 | `0x11` | `VIDEO_FRAME`  | A → M     | binário (access unit)  |
+| `0x12` | `AUDIO_CONFIG` | A → M     | binário (formato PCM)  |
+| `0x13` | `AUDIO_FRAME`  | A → M     | binário (PCM)          |
 | `0x20` | `ORIENTATION`  | A → M     | JSON                   |
 | `0x30` | `PING`         | ambos     | binário 8 bytes        |
 | `0x31` | `PONG`         | ambos     | binário 8 bytes        |
@@ -85,6 +87,24 @@ Em rotação, o Android também **re‑envia `VIDEO_CONFIG`** (novos SPS/PPS, po
 [ reserved  : 3 bytes]
 [ access unit em Annex-B ... ]
 ```
+
+**AUDIO_CONFIG** — formato do áudio do dispositivo (enviado uma vez, se o áudio estiver ligado):
+```
+[ sampleRate    : uint32 ]   (ex.: 44100)
+[ channels      : uint16 ]   (ex.: 2)
+[ bitsPerSample : uint16 ]   (= 16)
+```
+Tudo big-endian. Total 8 bytes.
+
+**AUDIO_FRAME** — um bloco de PCM do áudio interno do dispositivo:
+```
+[ ptsMicros : int64  ]   (big-endian; relógio monotônico, base independente do vídeo)
+[ amostras PCM ... ]     (signed 16-bit LITTLE-endian, intercalado por canal)
+```
+> ⚠️ Atenção à endianness: **só o sub-cabeçalho `ptsMicros` é big-endian** (convenção DCWP).
+> As amostras PCM são int16 **little-endian** (saída nativa do `AudioRecord`/`AVAudioPCMBuffer`) — não há byte-swap.
+> Captura via `AudioPlaybackCapture` (Android 11+); apps/jogos que desabilitam captura resultam em silêncio.
+> O volume é controlado no **Mac** (player), não no Android.
 
 **PING / PONG** — 8 bytes:
 ```

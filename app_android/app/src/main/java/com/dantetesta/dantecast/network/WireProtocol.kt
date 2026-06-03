@@ -29,6 +29,8 @@ import java.nio.ByteOrder
  *   0x02 HELLO_ACK    (M→A, JSON)
  *   0x10 VIDEO_CONFIG (A→M, binário)
  *   0x11 VIDEO_FRAME  (A→M, binário)
+ *   0x12 AUDIO_CONFIG (A→M, binário)
+ *   0x13 AUDIO_FRAME  (A→M, binário)
  *   0x20 ORIENTATION  (A→M, JSON)
  *   0x30 PING         (binário 8B)
  *   0x31 PONG         (binário 8B)
@@ -51,6 +53,8 @@ object WireProtocol {
         const val HELLO_ACK: Byte = 0x02
         const val VIDEO_CONFIG: Byte = 0x10
         const val VIDEO_FRAME: Byte = 0x11
+        const val AUDIO_CONFIG: Byte = 0x12
+        const val AUDIO_FRAME: Byte = 0x13
         const val ORIENTATION: Byte = 0x20
         const val PING: Byte = 0x30
         const val PONG: Byte = 0x31
@@ -154,6 +158,33 @@ object WireProtocol {
         buf.put(if (keyframe) 0x01.toByte() else 0)  // 8 (bit0 = keyframe)
         buf.put(0); buf.put(0); buf.put(0)           // 9..11 reservado
         buf.put(accessUnit)
+        return buf.array()
+    }
+
+    /**
+     * AUDIO_CONFIG payload (8 bytes, BIG-ENDIAN):
+     *   [sampleRate uint32][channels uint16][bitsPerSample uint16]
+     * Ex.: 44100 Hz, 2 canais, 16 bits.
+     */
+    fun encodeAudioConfig(sampleRate: Int, channels: Int, bitsPerSample: Int): ByteArray {
+        val buf = ByteBuffer.allocate(8).order(ByteOrder.BIG_ENDIAN)
+        buf.putInt(sampleRate)                          // 0..3 uint32
+        buf.putShort((channels and 0xFFFF).toShort())   // 4..5 uint16
+        buf.putShort((bitsPerSample and 0xFFFF).toShort()) // 6..7 uint16
+        return buf.array()
+    }
+
+    /**
+     * AUDIO_FRAME payload:
+     *   [ptsMicros int64 BIG-ENDIAN] (sub-header de 8 bytes) + PCM cru anexado AS-IS.
+     *
+     * ATENÇÃO: o PCM é signed 16-bit LITTLE-endian intercalado (saída nativa do AudioRecord).
+     * NÃO trocamos a ordem dos samples — apenas o sub-header de pts é big-endian.
+     */
+    fun encodeAudioFrame(ptsMicros: Long, pcm: ByteArray): ByteArray {
+        val buf = ByteBuffer.allocate(8 + pcm.size).order(ByteOrder.BIG_ENDIAN)
+        buf.putLong(ptsMicros) // 0..7 (big-endian)
+        buf.put(pcm)           // PCM little-endian preservado byte-a-byte
         return buf.array()
     }
 

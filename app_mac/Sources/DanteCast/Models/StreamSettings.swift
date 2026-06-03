@@ -10,11 +10,12 @@ enum StreamQuality: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     /// Bitrate sugerido (bps) por nível de qualidade.
+    /// "Alta" sobe para ~18 Mbps para 60fps mais suave.
     var suggestedBitrate: Int {
         switch self {
         case .low:    return 2_000_000
-        case .medium: return 6_000_000
-        case .high:   return 12_000_000
+        case .medium: return 8_000_000
+        case .high:   return 18_000_000
         }
     }
 }
@@ -83,6 +84,11 @@ struct StreamSettings: Codable, Equatable {
     var appearance: AppAppearance = .system   // skin claro/escuro/sistema
     var recordAudio: Bool = false             // incluir áudio do microfone na gravação
     var showDeviceFrame: Bool = true          // moldura de smartphone no viewer
+    var useManualBitrate: Bool = false        // se true, `bitrate` é manual (ignora preset)
+
+    /// Limites do bitrate manual (bps): 2–20 Mbps.
+    static let minBitrate = 2_000_000
+    static let maxBitrate = 20_000_000
 
     /// Preset padrão equilibrado.
     static let `default` = StreamSettings(
@@ -94,12 +100,18 @@ struct StreamSettings: Codable, Equatable {
         recordingFolderPath: nil,
         appearance: .system,
         recordAudio: false,
-        showDeviceFrame: true
+        showDeviceFrame: true,
+        useManualBitrate: false
     )
 
-    /// Aplica os bitrates/dimensões coerentes ao mudar a qualidade.
+    /// Aplica o bitrate do preset de qualidade — A MENOS que o usuário tenha
+    /// fixado um bitrate manual (que sobrepõe o preset no HELLO_ACK).
     mutating func applyQualityPreset() {
-        bitrate = quality.suggestedBitrate
+        if !useManualBitrate {
+            bitrate = quality.suggestedBitrate
+        } else {
+            bitrate = max(Self.minBitrate, min(Self.maxBitrate, bitrate))
+        }
     }
 
     /// Largura efetiva a anunciar (0 = nativa).

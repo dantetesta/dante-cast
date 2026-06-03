@@ -1,10 +1,13 @@
 import SwiftUI
 
-/// Moldura/skin de smartphone ao redor do conteúdo (o vídeo espelhado).
-/// Desenha um corpo escuro com brilho metálico, cantos arredondados e uma
-/// "dynamic island" — dando a sensação de um celular real na tela do Mac.
+/// Moldura MINIMALISTA de smartphone ao redor do conteúdo (o vídeo espelhado).
 ///
-/// O conteúdo é ajustado por aspecto (`aspect`) e clipado nos cantos internos.
+/// Design: um aro fino (~6–8pt) escuro com cantos arredondados e um brilho
+/// metálico sutil. NADA fora do aro (sem corpo grosso, sem dynamic island,
+/// sem botões laterais, sem sombra pesada) — fundo TRANSPARENTE para "flutuar".
+///
+/// O conteúdo é ajustado por aspecto (`aspect`) e clipado nos cantos internos,
+/// preenchendo a área disponível no maior tamanho possível (max zoom).
 struct DeviceFrameView<Content: View>: View {
     /// Proporção do vídeo (largura × altura) já considerando a rotação.
     let aspect: CGSize
@@ -21,88 +24,43 @@ struct DeviceFrameView<Content: View>: View {
     }
     private var isPortrait: Bool { ratio < 1 }
 
-    // Espessura da borda e raios proporcionais ao formato.
-    private var bezel: CGFloat { isPortrait ? 12 : 12 }
-    private var innerCorner: CGFloat { isPortrait ? 30 : 26 }
+    // Aro fino e cantos arredondados proporcionais ao formato.
+    private var bezel: CGFloat { 7 }
+    private var innerCorner: CGFloat { isPortrait ? 26 : 22 }
     private var outerCorner: CGFloat { innerCorner + bezel }
 
     var body: some View {
         content
+            // Cantos internos da "tela" (clipa o vídeo).
             .aspectRatio(ratio, contentMode: .fit)
-            // Cantos internos da "tela".
             .clipShape(RoundedRectangle(cornerRadius: innerCorner, style: .continuous))
-            // Dynamic island / câmera sobre a tela.
-            .overlay(alignment: isPortrait ? .top : .leading) { island }
-            // Borda interna sutil para separar tela do corpo.
+            // Aro fino escuro (a "moldura"): preenche só a espessura da borda.
             .padding(bezel)
-            // Corpo do aparelho (a "moldura").
             .background(
                 RoundedRectangle(cornerRadius: outerCorner, style: .continuous)
-                    .fill(bodyGradient)
+                    .fill(bezelGradient)
             )
-            // Brilho metálico nas bordas.
+            // Brilho metálico sutil na borda externa.
             .overlay(
                 RoundedRectangle(cornerRadius: outerCorner, style: .continuous)
-                    .strokeBorder(edgeGradient, lineWidth: 1.5)
+                    .strokeBorder(edgeGradient, lineWidth: 1)
             )
-            // Botões laterais (volume / power) — detalhe sutil.
-            .overlay(alignment: isPortrait ? .trailing : .top) { sideButtons }
-            .shadow(color: .black.opacity(0.55), radius: 28, x: 0, y: 14)
-            .padding(28)
+            // Sombra MUITO leve só para destacar do fundo transparente.
+            .shadow(color: .black.opacity(0.30), radius: 10, x: 0, y: 4)
+            .padding(10)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Detalhes
+    // MARK: - Estilo
 
-    private var island: some View {
-        Group {
-            if isPortrait {
-                Capsule(style: .continuous)
-                    .fill(Color.black)
-                    .frame(width: 96, height: 26)
-                    .padding(.top, 10)
-            } else {
-                Capsule(style: .continuous)
-                    .fill(Color.black)
-                    .frame(width: 26, height: 96)
-                    .padding(.leading, 10)
-            }
-        }
-        .shadow(color: .black.opacity(0.4), radius: 2)
-    }
-
-    private var sideButtons: some View {
-        Group {
-            if isPortrait {
-                VStack(spacing: 10) {
-                    Capsule().frame(width: 3, height: 56)
-                    Capsule().frame(width: 3, height: 28)
-                }
-                .foregroundStyle(.black.opacity(0.55))
-                .offset(x: 1.5)
-                .padding(.top, 120)
-                .frame(maxHeight: .infinity, alignment: .top)
-            } else {
-                HStack(spacing: 10) {
-                    Capsule().frame(width: 56, height: 3)
-                    Capsule().frame(width: 28, height: 3)
-                }
-                .foregroundStyle(.black.opacity(0.55))
-                .offset(y: 1.5)
-                .padding(.leading, 120)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-    }
-
-    private var bodyGradient: LinearGradient {
+    private var bezelGradient: LinearGradient {
         LinearGradient(
-            colors: [Color(white: 0.16), Color(white: 0.07)],
+            colors: [Color(white: 0.14), Color(white: 0.05)],
             startPoint: .topLeading, endPoint: .bottomTrailing)
     }
     private var edgeGradient: LinearGradient {
         LinearGradient(
-            colors: [Color.white.opacity(0.35), Color.white.opacity(0.04), Color.white.opacity(0.18)],
+            colors: [Color.white.opacity(0.30), Color.white.opacity(0.03), Color.white.opacity(0.14)],
             startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }

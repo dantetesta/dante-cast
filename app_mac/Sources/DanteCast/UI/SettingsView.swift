@@ -19,9 +19,27 @@ struct SettingsView: View {
                 Picker("Taxa de quadros", selection: binding(\.fps)) {
                     ForEach(StreamFPS.allCases) { Text($0.label).tag($0) }
                 }
-                LabeledContent("Bitrate") {
-                    Text("\(app.settings.bitrate / 1_000_000) Mbps")
-                        .foregroundStyle(.secondary)
+                Toggle("Bitrate manual (sobrepõe a qualidade)", isOn: binding(\.useManualBitrate))
+                if app.settings.useManualBitrate {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Bitrate")
+                            Spacer()
+                            Text("\(app.settings.bitrate / 1_000_000) Mbps")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        // 2–20 Mbps em passos de 1 Mbps.
+                        Slider(value: Binding(
+                            get: { Double(app.settings.bitrate) / 1_000_000 },
+                            set: { app.settings.bitrate = Int($0.rounded()) * 1_000_000; app.saveSettings() }),
+                            in: 2...20, step: 1)
+                    }
+                } else {
+                    LabeledContent("Bitrate") {
+                        Text("\(app.settings.bitrate / 1_000_000) Mbps")
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 

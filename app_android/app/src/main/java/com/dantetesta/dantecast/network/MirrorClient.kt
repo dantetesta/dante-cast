@@ -49,7 +49,8 @@ class MirrorClient(
     // ANTIGOS (DROP_OLDEST) e sempre enviamos os mais recentes — mantendo a latência
     // baixa. Uma fila grande (ex.: 64) acumularia ~2s de vídeo atrasado sob congestão.
     // O decoder se recupera dos descartes no próximo keyframe (I-frame a cada 1s).
-    private val outbound = Channel<ByteArray>(capacity = 6, onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST)
+    // Capacidade 12 (antes 6): comporta o intercalamento áudio+vídeo sem atrasar.
+    private val outbound = Channel<ByteArray>(capacity = 12, onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST)
 
     private var writerJob: Job? = null
     private var readerJob: Job? = null
@@ -180,6 +181,16 @@ class MirrorClient(
     /** Enfileira um VIDEO_FRAME (AU em Annex-B). Não bloqueia. */
     fun sendVideoFrame(ptsMicros: Long, keyframe: Boolean, accessUnit: ByteArray) {
         enqueueRaw(WireProtocol.buildFrame(WireProtocol.Type.VIDEO_FRAME, WireProtocol.encodeVideoFrame(ptsMicros, keyframe, accessUnit)))
+    }
+
+    /** Enfileira AUDIO_CONFIG (sampleRate/channels/bitsPerSample). Enviar UMA vez no início. */
+    fun sendAudioConfig(sampleRate: Int, channels: Int, bitsPerSample: Int) {
+        enqueueRaw(WireProtocol.buildFrame(WireProtocol.Type.AUDIO_CONFIG, WireProtocol.encodeAudioConfig(sampleRate, channels, bitsPerSample)))
+    }
+
+    /** Enfileira um AUDIO_FRAME (PCM cru). Mesma fila do vídeo (1 único writer). Não bloqueia. */
+    fun sendAudioFrame(ptsMicros: Long, pcm: ByteArray) {
+        enqueueRaw(WireProtocol.buildFrame(WireProtocol.Type.AUDIO_FRAME, WireProtocol.encodeAudioFrame(ptsMicros, pcm)))
     }
 
     /** Enfileira ORIENTATION. */

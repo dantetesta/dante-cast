@@ -1,20 +1,25 @@
 package com.dantetesta.dantecast.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.hardware.display.DisplayManager
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import android.view.Display
 import androidx.core.app.NotificationCompat
 import com.dantetesta.dantecast.DanteCastApp
 import com.dantetesta.dantecast.MainActivity
 import com.dantetesta.dantecast.R
+import com.dantetesta.dantecast.capture.DeviceAudioCapture
 import com.dantetesta.dantecast.capture.ScreenCaptureManager
 import com.dantetesta.dantecast.encoder.H264Encoder
 import com.dantetesta.dantecast.model.SessionState
@@ -28,6 +33,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 
 /**
@@ -51,6 +58,7 @@ class ScreenMirrorService : Service() {
     private var encoder: H264Encoder? = null
     private var client: MirrorClient? = null
     private var projection: MediaProjection? = null
+    private var audioCapture: DeviceAudioCapture? = null
 
     // Dados efetivos da sessão.
     @Volatile private var sessionWidth = 0
@@ -59,6 +67,33 @@ class ScreenMirrorService : Service() {
     @Volatile private var sessionBitrate = 6_000_000
     @Volatile private var startTimeMs = 0L
     @Volatile private var lastRotation = 0
+
+    // Áudio do dispositivo (gated por setting; default OFF).
+    @Volatile private var deviceAudioRequested = false
+    @Volatile private var deviceAudioActive = false
+
+    // --- Rotação ---
+    // DisplayManager + listener para reagir à rotação (recriar pipeline com novas dimensões).
+    private var displayManager: DisplayManager? = null
+    // Serializa as reconfigurações: só UMA roda por vez (evita corrida entre eventos seguidos).
+    private val reconfigureMutex = Mutex()
+    @Volatile private var streaming = false
+
+    private val displayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) {}
+        override fun onDisplayRemoved(displayId: Int) {}
+        override fun onDisplayChanged(displayId: Int) {
+            if (displayId != Display.DEFAULT_DISPLAY || !streaming) return
+            val cap = captureManager ?: return
+            val info = runCatching { cap.currentScreenInfo() }.getOrNull() ?: return
+            // Reage se a rotação mudou OU se a orientação (paisagem/retrato) inverteu.
+            val rotationChanged = info.rotation != lastRotation
+            val orientationFlipped = (info.width >= info.height) != (sessionWidth >= sessionHeight)
+            if (rotationChanged || orientationFlipped) {
+                scope.launch { reconfigureForRotation(info) }
+            }
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -75,16 +110,23 @@ class ScreenMirrorService : Service() {
     }
 
     private fun startSession(intent: Intent) {
-        // 1) PRIMEIRO vai para foreground com o tipo mediaProjection (requisito A14+).
-        startAsForeground()
-
-        // 2) Lê parâmetros enviados pela Activity.
+        // 1) Lê parâmetros enviados pela Activity (antes do foreground, p/ decidir o tipo de FGS).
         val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Int.MIN_VALUE)
         val data: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent.getParcelableExtra(EXTRA_DATA, Intent::class.java)
         } else {
             @Suppress("DEPRECATION") intent.getParcelableExtra(EXTRA_DATA)
         }
+        // Áudio do dispositivo (gated): só ligamos se o usuário pediu, o SO suportar (API 29+)
+        // E a permissão RECORD_AUDIO estiver concedida — caso contrário seguimos VIDEO-ONLY.
+        deviceAudioRequested = intent.getBooleanExtra(EXTRA_DEVICE_AUDIO, false) &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            hasRecordAudioPermission()
+
+        // 2) PRIMEIRO vai para foreground (requisito A14+). Inclui o tipo microphone se o áudio
+        //    estiver habilitado — caso contrário usar FGS de microfone lançaria SecurityException.
+        startAsForeground(withMicrophone = deviceAudioRequested)
+
         val ip = intent.getStringExtra(EXTRA_IP) ?: return failAndStop("IP ausente")
         val port = intent.getIntExtra(EXTRA_PORT, 7843)
         val token = intent.getStringExtra(EXTRA_TOKEN) ?: return failAndStop("Token ausente")
@@ -195,7 +237,17 @@ class ScreenMirrorService : Service() {
                 }
                 updateNotification(effMac)
                 startElapsedTicker()
-                Log.i(tag, "Sessão STREAMING ${sessionWidth}x${sessionHeight}@${sessionFps}")
+
+                // 6) Streaming ativo: agora reagimos à rotação (recriação serializada da pipeline).
+                streaming = true
+                registerRotationListener()
+
+                // 7) Áudio do dispositivo (opcional/gated): NUNCA pode quebrar o vídeo.
+                if (deviceAudioRequested) {
+                    startDeviceAudio(proj, mirrorClient)
+                }
+
+                Log.i(tag, "Sessão STREAMING ${sessionWidth}x${sessionHeight}@${sessionFps} audio=$deviceAudioActive")
             } catch (t: Throwable) {
                 Log.e(tag, "Falha ao iniciar sessão", t)
                 failAndStop(t.message ?: "Erro de conexão")
@@ -215,6 +267,139 @@ class ScreenMirrorService : Service() {
         }
     }
 
+    // ---------------------------- ROTAÇÃO (TASK 1) ----------------------------
+
+    /** Registra o listener de mudança de display (rotação) no display padrão. */
+    private fun registerRotationListener() {
+        val dm = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        displayManager = dm
+        // handler=null => callbacks na thread principal; o trabalho pesado vai p/ o scope.
+        dm.registerDisplayListener(displayListener, null)
+        Log.i(tag, "DisplayListener registrado (rotação)")
+    }
+
+    /** Remove o listener de rotação (idempotente). */
+    private fun unregisterRotationListener() {
+        runCatching { displayManager?.unregisterDisplayListener(displayListener) }
+        displayManager = null
+    }
+
+    /**
+     * Recria a pipeline (encoder + VirtualDisplay) quando a tela gira.
+     *
+     * Estratégia (minimiza o "gap" de vídeo):
+     *   1. Calcula novas dimensões trocando W/H (preservando a escala da resolução escolhida),
+     *      sempre pares (and 1.inv()).
+     *   2. Cria um NOVO encoder com os MESMOS callbacks e obtém sua input Surface.
+     *   3. capture.resize(novaSurface, ...) recria o VirtualDisplay sobre a nova surface.
+     *   4. SÓ ENTÃO libera o encoder ANTIGO (novo já está pronto -> menor gap).
+     *   5. Atualiza estado, envia ORIENTATION e força um keyframe (o Mac recupera na hora).
+     *
+     * Serializado por [reconfigureMutex]: apenas uma reconfiguração roda por vez.
+     * Crash-safe: qualquer falha encerra a sessão (stopEverything).
+     */
+    private suspend fun reconfigureForRotation(info: ScreenCaptureManager.ScreenInfo) {
+        reconfigureMutex.withLock {
+            if (!streaming) return
+            val capture = captureManager ?: return
+            val mirrorClient = client ?: return
+            val oldEnc = encoder ?: return
+
+            // Recheca dentro do lock: outro evento pode já ter aplicado a mesma rotação.
+            val rotationChanged = info.rotation != lastRotation
+            val orientationFlipped = (info.width >= info.height) != (sessionWidth >= sessionHeight)
+            if (!rotationChanged && !orientationFlipped) return
+
+            // 1) Novas dimensões = troca W/H da sessão atual, preservando a escala. Pares.
+            val newW = (sessionHeight and 1.inv())
+            val newH = (sessionWidth and 1.inv())
+
+            try {
+                Log.i(tag, "Rotação: ${sessionWidth}x${sessionHeight} -> ${newW}x${newH} (rot=${info.rotation})")
+
+                // 2) NOVO encoder com os MESMOS callbacks (lê sessionWidth/Height atualizados).
+                val newEnc = H264Encoder(
+                    onConfig = { csd ->
+                        mirrorClient.sendVideoConfig(sessionWidth, sessionHeight, sessionFps, csd)
+                    },
+                    onFrame = { pts, key, bytes ->
+                        mirrorClient.sendVideoFrame(pts, key, bytes)
+                        SessionBus.update { it.copy(framesSent = it.framesSent + 1) }
+                    },
+                    onError = { t -> stopEverything(t) }
+                )
+                val newSurface = newEnc.configure(newW, newH, sessionFps, sessionBitrate)
+
+                // 3) Recria o VirtualDisplay sobre a nova surface (mesma projeção).
+                capture.resize(newSurface, newW, newH, info.densityDpi)
+
+                // 4) Agora que o novo está ativo, libera o encoder antigo (menor gap possível).
+                encoder = newEnc
+                runCatching { oldEnc.release() }
+
+                // 5) Atualiza estado + notifica o Mac + força keyframe.
+                sessionWidth = newW; sessionHeight = newH; lastRotation = info.rotation
+                mirrorClient.sendOrientation(Orientation(newW, newH, info.rotation))
+                newEnc.requestSyncFrame()
+                SessionBus.update { it.copy(width = newW, height = newH) }
+                Log.i(tag, "Rotação aplicada: ${newW}x${newH}")
+            } catch (t: Throwable) {
+                Log.e(tag, "Falha ao reconfigurar para rotação", t)
+                stopEverything(t)
+            }
+        }
+    }
+
+    // ---------------------------- ÁUDIO DO DISPOSITIVO (TASK 2) ----------------------------
+
+    /** Verifica se RECORD_AUDIO foi concedida. */
+    private fun hasRecordAudioPermission(): Boolean =
+        checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Inicia a captura de áudio do dispositivo (API 29+) reaproveitando a mesma MediaProjection.
+     * Qualquer falha apenas LOGA e mantém a sessão de vídeo (áudio é estritamente opcional).
+     */
+    private fun startDeviceAudio(proj: MediaProjection, mirrorClient: MirrorClient) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        if (!hasRecordAudioPermission()) {
+            Log.w(tag, "Áudio pedido mas sem permissão RECORD_AUDIO — seguindo VIDEO-ONLY")
+            return
+        }
+        try {
+            // Anuncia o formato UMA vez (44100 Hz, 2 canais, 16 bits) antes dos frames.
+            mirrorClient.sendAudioConfig(
+                DeviceAudioCapture.SAMPLE_RATE,
+                DeviceAudioCapture.CHANNELS,
+                DeviceAudioCapture.BITS_PER_SAMPLE
+            )
+            val cap = DeviceAudioCapture(
+                projection = proj,
+                onPcm = { ptsMicros, pcm -> mirrorClient.sendAudioFrame(ptsMicros, pcm) },
+                onError = { t ->
+                    // Falha na leitura de áudio NÃO derruba o vídeo: apenas para a captura de áudio.
+                    Log.w(tag, "Erro na captura de áudio — desativando áudio, vídeo segue", t)
+                    stopDeviceAudio()
+                }
+            )
+            cap.start()
+            audioCapture = cap
+            deviceAudioActive = true
+            Log.i(tag, "Áudio do dispositivo ATIVO")
+        } catch (t: Throwable) {
+            // Permissão/captura bloqueada/exceção -> VIDEO-ONLY.
+            Log.w(tag, "Não foi possível iniciar o áudio do dispositivo — seguindo VIDEO-ONLY", t)
+            stopDeviceAudio()
+        }
+    }
+
+    /** Para a captura de áudio (idempotente). */
+    private fun stopDeviceAudio() {
+        deviceAudioActive = false
+        runCatching { audioCapture?.stop() }
+        audioCapture = null
+    }
+
     /** Resolve dimensões finais a partir da preferência e da tela física. */
     private fun resolveDimensions(pref: Pair<Int, Int>, screenW: Int, screenH: Int): Pair<Int, Int> {
         if (pref.first <= 0 || pref.second <= 0) return screenW to screenH // NATIVE
@@ -228,14 +413,15 @@ class ScreenMirrorService : Service() {
 
     // ---------------------------- FOREGROUND ----------------------------
 
-    private fun startAsForeground() {
+    private fun startAsForeground(withMicrophone: Boolean = false) {
         val notification = buildNotification(getString(R.string.notif_text))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIF_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-            )
+            // Combina mediaProjection + microphone (quando o áudio está habilitado).
+            var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            if (withMicrophone && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            }
+            startForeground(NOTIF_ID, notification, type)
         } else {
             startForeground(NOTIF_ID, notification)
         }
@@ -280,6 +466,9 @@ class ScreenMirrorService : Service() {
     }
 
     private fun stopEverything(cause: Throwable?) {
+        streaming = false
+        unregisterRotationListener()
+        stopDeviceAudio()
         runCatching { client?.sendByeAndClose() }
         runCatching { encoder?.release() }
         runCatching { captureManager?.release() }
@@ -297,6 +486,9 @@ class ScreenMirrorService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        streaming = false
+        unregisterRotationListener()
+        stopDeviceAudio()
         runCatching { encoder?.release() }
         runCatching { captureManager?.release() }
         scope.cancel()
@@ -329,6 +521,7 @@ class ScreenMirrorService : Service() {
         const val EXTRA_PREF_RES_H = "extra_pref_res_h"
         const val EXTRA_PREF_FPS = "extra_pref_fps"
         const val EXTRA_PREF_BITRATE = "extra_pref_bitrate"
+        const val EXTRA_DEVICE_AUDIO = "extra_device_audio"
 
         /** Helper para iniciar o service a partir da Activity/ViewModel. */
         fun start(
@@ -342,7 +535,8 @@ class ScreenMirrorService : Service() {
             prefResW: Int,
             prefResH: Int,
             prefFps: Int,
-            prefBitrate: Int
+            prefBitrate: Int,
+            deviceAudio: Boolean = false
         ) {
             val intent = Intent(context, ScreenMirrorService::class.java).apply {
                 action = ACTION_START
@@ -356,6 +550,7 @@ class ScreenMirrorService : Service() {
                 putExtra(EXTRA_PREF_RES_H, prefResH)
                 putExtra(EXTRA_PREF_FPS, prefFps)
                 putExtra(EXTRA_PREF_BITRATE, prefBitrate)
+                putExtra(EXTRA_DEVICE_AUDIO, deviceAudio)
             }
             // startForegroundService: o service tem ~5s para chamar startForeground().
             context.startForegroundService(intent)

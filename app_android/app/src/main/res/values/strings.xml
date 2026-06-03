@@ -55,6 +55,10 @@
     <string name="settings_res_720">720p</string>
     <string name="settings_res_1080">1080p</string>
     <string name="settings_res_native">Nativa</string>
+    <string name="settings_audio">Áudio</string>
+    <string name="settings_audio_toggle">Transmitir áudio do dispositivo para o Mac</string>
+    <string name="settings_audio_desc">Envia o som que toca no celular junto com o vídeo. Alguns apps e jogos podem bloquear a captura de áudio — nesse caso, a transmissão segue só com vídeo. Requer permissão de microfone.</string>
+    <string name="settings_audio_unavailable">Disponível apenas no Android 10 (API 29) ou superior.</string>
 
     <!-- ====== Notificação ====== -->
     <string name="notif_channel_name">Espelhamento de tela</string>

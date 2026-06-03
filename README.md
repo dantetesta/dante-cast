@@ -7,15 +7,26 @@ interface bonita e pareamento simples por QR Code. Engine própria (H.264 + TCP)
 
 ## ⬇️ Downloads (para clientes)
 
-Builds prontos na página de **[Releases](https://github.com/dantetesta/dante-cast/releases/latest)**:
+Builds prontos na página de **[Releases](https://github.com/dantetesta/dante-cast/releases)**:
 
-| Plataforma | Arquivo | Observação |
-|-----------|---------|------------|
-| 🍎 macOS (Apple Silicon, 13+) | **DanteCast.dmg** | Não assinado: no 1º uso, botão direito → **Abrir**. |
-| 🤖 Android (8.0+ / API 26+) | **DanteCast.apk** | Instale via sideload (ative "Fontes desconhecidas"). |
-| 🤖 Android (fallback) | **DanteCast-debug.apk** | Variante debug, sempre instalável. |
+| Plataforma | Versão | Arquivo | Observação |
+|-----------|--------|---------|------------|
+| 🍎 macOS (Apple Silicon, 13+) | **1.2.0** | **DanteCast.dmg** (tag `mac-v1.2.0`) | Não assinado: no 1º uso, botão direito → **Abrir**. |
+| 🤖 Android (8.0+ / API 26+) | **1.2.0** | **DanteCast.apk** (tag `android-v1.2.0`) | Instale via sideload (ative "Fontes desconhecidas"). |
+| 🤖 Android (fallback) | — | **DanteCast-debug.apk** | Variante debug, sempre instalável. |
 
-Repositório: **https://github.com/dantetesta/dante-cast** · CI: GitHub Actions (compila e publica os binários a cada tag `v*`).
+> **Versionamento independente:** cada app tem sua própria versão e só sobe quando é alterado. Releases por app via tags `mac-v*` e `android-v*`.
+
+Repositório: **https://github.com/dantetesta/dante-cast** · CI: GitHub Actions (publica só o app cuja tag foi criada).
+
+### 🆕 Novidades v1.2.0 (Mac 1.2.0 · Android 1.2.0)
+
+- 🔄 **Rotação corrigida** (bug principal): o Android detecta a rotação e **recria o pipeline** (VirtualDisplay+encoder) nas novas dimensões, reenviando config+keyframe; o Mac exibe na orientação certa **preenchendo a janela (zoom máximo)**, sem letterbox.
+- 🪟 **Janela flutuante transparente** (modo "Flutuante"): só a moldura fina do celular sobre fundo transparente; arrasta pra mover e redimensiona pra ampliar. Moldura redesenhada minimalista.
+- 🔊 **Áudio do dispositivo no Mac** (`AudioPlaybackCapture` no Android → player `AVAudioEngine` no Mac) com **slider de volume + mudo**. Desligado por padrão; alguns apps/jogos bloqueiam captura.
+- 🎙️ **Gravação com o som do dispositivo** (ou microfone, ou sem áudio), A/V sincronizados no host clock.
+- 🎚️ **Bitrate manual** (2–20 Mbps) e presets maiores para 60fps mais suave.
+- 🧩 Novas mensagens no protocolo: `AUDIO_CONFIG (0x12)` e `AUDIO_FRAME (0x13)` — ver [docs/02](docs/02-protocolo-tcp.md).
 
 ### 🆕 Novidades v1.1.0 (polimento Apple-grade)
 

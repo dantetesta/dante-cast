@@ -18,8 +18,10 @@ android {
         applicationId = "com.dantetesta.dantecast"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        // Versão do app Android — versionada de forma INDEPENDENTE do macOS.
+        // versionCode é monotônico (+1 a cada mudança no Android).
+        versionCode = 2
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

@@ -13,7 +13,9 @@ data class StreamSettings(
     val resolution: Resolution = Resolution.HD1080,
     val fps: Fps = Fps.FPS30,
     /** bps. Se < 0, deriva automaticamente do preset. */
-    val bitrate: Int = -1
+    val bitrate: Int = -1,
+    /** Transmitir o áudio do dispositivo para o Mac (API 29+). Desligado por padrão. */
+    val deviceAudioEnabled: Boolean = false
 ) {
     /** Bitrate efetivo (resolve o automático). */
     fun effectiveBitrate(screenW: Int, screenH: Int): Int =
